@@ -1,0 +1,97 @@
+# ========================================
+# Sensible Daten
+# ========================================
+
+# Environment-Dateien mit Datenbank-Credentials
+api/config/.env
+.env
+
+# Backup-Dateien von .env
+*.env.backup
+*.env.old
+*.env.local
+
+# ========================================
+# Betriebssystem
+# ========================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ========================================
+# IDEs & Editoren
+# ========================================
+
+# VS Code
+.vscode/
+*.code-workspace
+.github
+
+# PHPStorm / IntelliJ
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ========================================
+# PHP & Composer
+# ========================================
+
+# Composer
+vendor/
+composer.lock
+
+# PHP
+*.cache
+*.swp
+*.swo
+
+# ========================================
+# Logs & Debug-Dateien
+# ========================================
+
+# Log-Dateien
+*.log
+error.log
+debug.log
+
+# Debug-Skripte (nur für lokale Tests)
+debug*.php
+test_*.php
+phpinfo.php
+
+# ========================================
+# Temporäre Dateien
+# ========================================
+
+# Allgemeine Temp-Dateien
+tmp/
+temp/
+*.tmp
+*.bak
+
+# API-Test-Outputs
+test_results/
+api_test_output/
+
+# ========================================
+# Projekt-spezifisch
+# ========================================
+
+# Persönliche Dateien
+.spec-workflow/
+Anleitungen/
+zum_loeschen
