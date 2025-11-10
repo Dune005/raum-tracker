@@ -1,5 +1,5 @@
 <?php
-// update_count.php - Erweitert für 2 separate ESP32-Boards
+// update_count.php - Erweitert für 2 separate ESP32-Boards (mit File-Locking)
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 
@@ -7,6 +7,14 @@ $dataFile = 'counter_data.json';
 
 // POST-Daten vom ESP32 empfangen
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // File-Handle mit LOCK öffnen
+    $lockFile = fopen($dataFile . '.lock', 'w');
+    if (!$lockFile || !flock($lockFile, LOCK_EX)) {
+        http_response_code(503);
+        echo json_encode(['status' => 'error', 'message' => 'Could not acquire lock']);
+        exit;
+    }
+    
     // Bestehende Daten laden (falls vorhanden)
     $existingData = [];
     if (file_exists($dataFile)) {
@@ -44,6 +52,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Daten in Datei speichern
         file_put_contents($dataFile, json_encode($data));
         
+        // Lock freigeben
+        flock($lockFile, LOCK_UN);
+        fclose($lockFile);
+        
         echo json_encode([
             'status' => 'success',
             'count' => isset($data['count']) ? $data['count'] : null,
@@ -52,6 +64,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ]);
         exit;
     }
+    
+    // Lock freigeben bei Fehler
+    flock($lockFile, LOCK_UN);
+    fclose($lockFile);
     
     // Falls keine relevanten POST-Daten
     http_response_code(400);
@@ -76,9 +92,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         
         $data['has_data'] = true;
         
-        // Sound Level in dB umrechnen (30-90 dB Range)
+        // Sound Level in dB umrechnen (30-60 dB Range - realistischer für Aufenthaltsraum)
         if (isset($data['sound_level']) && $data['sound_level'] !== null) {
-            $data['sound_db'] = round(30 + ($data['sound_level'] / 100 * 60), 1);
+            $data['sound_db'] = round(30 + ($data['sound_level'] / 100 * 30), 1);
         } else {
             $data['sound_db'] = null;
         }

@@ -371,6 +371,9 @@
                             <div id="sound-bar" style="background: linear-gradient(90deg, #4ade80, #fbbf24, #f87171); height: 100%; width: 0%; transition: width 0.3s;"></div>
                         </div>
                     </div>
+                    <div style="margin-top: 10px; font-size: 0.8em; color: #666; text-align: center;">
+                        Ruhig: 30-40 dB | Normal: 40-50 dB | Laut: 50-60 dB
+                    </div>
                 </div>
             </div>
 
@@ -476,7 +479,7 @@
     <script>
         const API_BASE = 'https://corner.klaus-klebband.ch/api/v1';
         const SPACE_ID = '880e8400-e29b-41d4-a716-446655440001';
-        const ARDUINO_PHP = 'https://klaus-klebband.ch/test_arduino_abstandmesser/update_count.php';
+        const ARDUINO_PHP = 'https://corner.klaus-klebband.ch/update_count.php';
 
         let lastArduinoCount = null;
 
@@ -489,12 +492,15 @@
                 // Prüfe ob überhaupt jemals Daten empfangen wurden
                 if (!data.has_data) {
                     document.getElementById('arduino-count').textContent = '--';
-                    document.getElementById('arduino-timestamp').textContent = '--';
-                    document.getElementById('arduino-signal').textContent = 'Nie';
+                    document.getElementById('arduino-count-text').textContent = '--';
+                    document.getElementById('arduino-timestamp-main').textContent = '--';
+                    document.getElementById('arduino-signal-main').textContent = 'Nie';
                     
-                    const statusDiv = document.getElementById('arduino-status');
-                    statusDiv.className = 'controller-status offline';
-                    statusDiv.innerHTML = '<span style="width: 10px; height: 10px; background: #f87171; border-radius: 50%; display: inline-block;"></span> Controller offline';
+                    const statusDivMain = document.getElementById('arduino-status-main');
+                    statusDivMain.className = 'controller-status offline';
+                    statusDivMain.style.background = 'rgba(248, 113, 113, 0.3)';
+                    statusDivMain.style.color = 'white';
+                    statusDivMain.innerHTML = '<span style="width: 10px; height: 10px; background: #f87171; border-radius: 50%; display: inline-block;"></span> Controller offline (keine Daten)';
                     return;
                 }
 
@@ -569,9 +575,11 @@
 
         // API Auslastungsdaten laden
         async function loadOccupancyData() {
+            console.log('📊 Lade Auslastungsdaten...');
             try {
                 const response = await fetch(`${API_BASE}/occupancy/current?space_id=${SPACE_ID}`);
                 const data = await response.json();
+                console.log('📊 Auslastungsdaten:', data);
 
                 if (data.success) {
                     const d = data.data;
@@ -668,16 +676,23 @@
 
         // Alle Daten laden
         async function loadAllData() {
-            await Promise.all([
-                loadArduinoData(),
-                loadOccupancyData(),
-                loadTodayStats(),
-                loadFlowEvents()
-            ]);
+            console.log('🔄 Starte Datenladen...');
+            try {
+                await Promise.all([
+                    loadArduinoData(),
+                    loadOccupancyData(),
+                    loadTodayStats(),
+                    loadFlowEvents()
+                ]);
+                console.log('✅ Alle Daten geladen');
+            } catch (error) {
+                console.error('❌ Fehler beim Laden:', error);
+            }
 
             // Loading verstecken, Content anzeigen
             document.getElementById('loading').style.display = 'none';
             document.getElementById('content').style.display = 'block';
+            console.log('✅ Dashboard angezeigt');
         }
 
         // Initial laden
