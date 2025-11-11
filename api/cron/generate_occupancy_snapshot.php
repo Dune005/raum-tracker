@@ -18,12 +18,12 @@ date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 
 // ========== ZEITFENSTER-KONFIGURATION ==========
 // Snapshots nur in diesem Zeitfenster erstellen
-$ACTIVE_START_HOUR = 10;  // Ab 10:00 Uhr
-$ACTIVE_END_HOUR = 14;    // Bis 14:00 Uhr (nicht inklusiv)
+$ACTIVE_START_TIME = '17:34';  // Ab 17:18 Uhr
+$ACTIVE_END_TIME = '17:50';    // Bis 17:30 Uhr (nicht inklusiv)
 
-// Aktuelle Stunde prüfen
-$currentHour = (int)date('H');
-if ($currentHour < $ACTIVE_START_HOUR || $currentHour >= $ACTIVE_END_HOUR) {
+// Aktuelle Zeit prüfen
+$currentTime = date('H:i');
+if ($currentTime < $ACTIVE_START_TIME || $currentTime >= $ACTIVE_END_TIME) {
     // Außerhalb des Zeitfensters - nichts tun
     exit(0);
 }
@@ -70,30 +70,30 @@ try {
         
         logMessage("  → Personen (Flow-basiert): {$peopleEstimate}");
         
-        // 2. Durchschnittliche Lautstärke (letzte 2 Minuten)
+        // 2. Durchschnittliche Lautstärke (letzte 24 Stunden - TEMPORÄR FÜR TESTS)
         $queryNoise = "SELECT AVG(r.value_num) as avg_noise
                        FROM reading r
                        JOIN sensor s ON r.sensor_id = s.id
                        JOIN device d ON s.device_id = d.id
                        WHERE d.space_id = :space_id
                        AND s.type = 'MICROPHONE'
-                       AND r.ts >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)";
+                       AND r.ts >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
         $stmtNoise = $db->prepare($queryNoise);
         $stmtNoise->bindParam(':space_id', $spaceId);
         $stmtNoise->execute();
         $noiseResult = $stmtNoise->fetch(PDO::FETCH_ASSOC);
         $noiseDelta = $noiseResult['avg_noise'] ? round($noiseResult['avg_noise'], 1) : null;
         
-        logMessage("  → Lautstärke (Ø 2min): " . ($noiseDelta ? "{$noiseDelta} dB" : "keine Daten"));
+        logMessage("  → Lautstärke (Ø 24h): " . ($noiseDelta ? "{$noiseDelta} dB" : "keine Daten"));
         
-        // 3. Bewegungszähler (letzte 2 Minuten)
+        // 3. Bewegungszähler (letzte 24 Stunden - TEMPORÄR FÜR TESTS)
         $queryMotion = "SELECT COUNT(*) as motion_count
                         FROM reading r
                         JOIN sensor s ON r.sensor_id = s.id
                         JOIN device d ON s.device_id = d.id
                         WHERE d.space_id = :space_id
                         AND s.type = 'PIR'
-                        AND r.ts >= DATE_SUB(NOW(), INTERVAL 2 MINUTE)
+                        AND r.ts >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
                         AND r.value_num > 0";
         $stmtMotion = $db->prepare($queryMotion);
         $stmtMotion->bindParam(':space_id', $spaceId);
@@ -101,7 +101,7 @@ try {
         $motionResult = $stmtMotion->fetch(PDO::FETCH_ASSOC);
         $motionCount = (int)$motionResult['motion_count'];
         
-        logMessage("  → Bewegungen (2min): {$motionCount}");
+        logMessage("  → Bewegungen (24h): {$motionCount}");
         
         // 4. Schwellenwerte holen (JSON-Format)
         $queryThresholds = "SELECT noise_levels, motion_levels

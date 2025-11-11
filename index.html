@@ -599,7 +599,8 @@
                     // Netto-Personen heute
                     document.getElementById('net-people').textContent = d.net_people_today || 0;
                     
-                    // Lautstärke (wird nicht mehr hier angezeigt, jetzt von Arduino)
+                    // Durchschnittliche Lautstärke aus DB
+                    document.getElementById('avg-noise-db').textContent = d.avg_noise_db ? `${d.avg_noise_db} dB` : '-';
                     
                     // Bewegungen
                     document.getElementById('motion-count').textContent = d.motion_count || 0;
@@ -621,7 +622,7 @@
                     
                     document.getElementById('peak-time').textContent = d.peak_occupancy?.time || '-';
                     document.getElementById('peak-people').textContent = d.peak_occupancy?.people_estimate || '-';
-                    document.getElementById('avg-noise-db').textContent = d.avg_noise_db ? `${d.avg_noise_db} dB` : '-';
+                    document.getElementById('avg-noise').textContent = d.avg_noise_db ? `${d.avg_noise_db} dB` : '-';
                     document.getElementById('busiest-hour').textContent = d.busiest_hour?.hour ? `${d.busiest_hour.hour}:00 Uhr` : '-';
                 }
             } catch (error) {
