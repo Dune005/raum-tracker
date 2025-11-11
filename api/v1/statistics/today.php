@@ -43,17 +43,59 @@ try {
     $stmtFlow->execute();
     $flowResult = $stmtFlow->fetch();
     
-    // Peak Occupancy heute
-    $queryPeak = "SELECT ts, people_estimate, level 
-                  FROM occupancy_snapshot 
-                  WHERE space_id = :space_id 
-                  AND DATE(ts) = CURDATE()
-                  ORDER BY people_estimate DESC 
-                  LIMIT 1";
-    $stmtPeak = $db->prepare($queryPeak);
-    $stmtPeak->bindParam(':space_id', $spaceId);
-    $stmtPeak->execute();
-    $peakResult = $stmtPeak->fetch();
+    // Peak Occupancy heute - berechnet aus Flow-Events
+    // Hole alle Flow-Events von heute
+    $queryFlowEvents = "SELECT ts, direction 
+                        FROM flow_event 
+                        WHERE space_id = :space_id 
+                        AND DATE(ts) = CURDATE()
+                        ORDER BY ts ASC";
+    $stmtFlowEvents = $db->prepare($queryFlowEvents);
+    $stmtFlowEvents->bindParam(':space_id', $spaceId);
+    $stmtFlowEvents->execute();
+    $flowEvents = $stmtFlowEvents->fetchAll();
+    
+    // Berechne Peak-Zeit aus Flow-Events
+    $peakResult = null;
+    if (!empty($flowEvents)) {
+        $maxPeople = 0;
+        $maxTimestamp = null;
+        $currentPeople = 0;
+        
+        foreach ($flowEvents as $event) {
+            if ($event['direction'] === 'IN') {
+                $currentPeople++;
+            } else if ($event['direction'] === 'OUT') {
+                $currentPeople--;
+            }
+            
+            // Negative Werte vermeiden
+            $currentPeople = max(0, $currentPeople);
+            
+            // Neuer Peak?
+            if ($currentPeople > $maxPeople) {
+                $maxPeople = $currentPeople;
+                $maxTimestamp = $event['ts'];
+            }
+        }
+        
+        // Wenn ein Peak gefunden wurde
+        if ($maxPeople > 0 && $maxTimestamp) {
+            // Level basierend auf Personenanzahl bestimmen
+            $peakLevel = 'LOW';
+            if ($maxPeople >= 20) {
+                $peakLevel = 'HIGH';
+            } elseif ($maxPeople >= 5) {
+                $peakLevel = 'MEDIUM';
+            }
+            
+            $peakResult = [
+                'ts' => $maxTimestamp,
+                'people_estimate' => $maxPeople,
+                'level' => $peakLevel
+            ];
+        }
+    }
     
     // Durchschnittliche Lautstärke heute
     $queryNoise = "SELECT AVG(noise_db) as avg_noise 
@@ -96,7 +138,7 @@ try {
         'total_entries' => (int)($flowResult['total_entries'] ?? 0),
         'total_exits' => (int)($flowResult['total_exits'] ?? 0),
         'peak_occupancy' => $peakResult ? [
-            'time' => date('H:i:s', strtotime($peakResult['ts'])),
+            'time' => date('H:i', strtotime($peakResult['ts'])),
             'people_estimate' => (int)$peakResult['people_estimate'],
             'level' => $peakResult['level']
         ] : null,

@@ -13,13 +13,33 @@
 
 require_once __DIR__ . '/../config/Database.php';
 
+// ========== SICHERHEIT: TOKEN-AUTHENTIFIZIERUNG ==========
+// Nur Aufrufe mit gültigem Token erlauben (für Raspberry Pi Cron)
+// Token wird aus .env geladen (sicherer!)
+$CRON_SECRET = $_ENV['CRON_SECRET'] ?? null;
+
+if (!$CRON_SECRET) {
+    http_response_code(500);
+    error_log("CRON_SECRET nicht in .env definiert!");
+    die("Configuration error\n");
+}
+
+// Prüfe ob Token vorhanden und korrekt ist
+$providedToken = $_GET['token'] ?? $_SERVER['HTTP_X_CRON_TOKEN'] ?? null;
+
+if ($providedToken !== $CRON_SECRET) {
+    http_response_code(403);
+    die("Forbidden: Invalid or missing token\n");
+}
+// =========================================================
+
 // Timezone setzen
 date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 
 // ========== ZEITFENSTER-KONFIGURATION ==========
 // Snapshots nur in diesem Zeitfenster erstellen
-$ACTIVE_START_TIME = '17:34';  // Ab 17:18 Uhr
-$ACTIVE_END_TIME = '17:50';    // Bis 17:30 Uhr (nicht inklusiv)
+$ACTIVE_START_TIME = '10:00';  // Ab 10:00 Uhr
+$ACTIVE_END_TIME = '14:00';    // Bis 14:00 Uhr (nicht inklusiv)
 
 // Aktuelle Zeit prüfen
 $currentTime = date('H:i');
