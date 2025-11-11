@@ -4,7 +4,7 @@
 
 ## 📋 Übersicht
 
-Dieses Projekt erfasst die Auslastung des Aufenthaltsraums IM5 in Echtzeit mit Lichtschranken, Mikrofon und PIR-Sensoren. Die Daten werden über eine REST API verarbeitet und auf einem E-Ink Display im Foyer visualisiert.
+Dieses Projekt erfasst die Auslastung des Aufenthaltsraums IM5 in Echtzeit mit Lichtschranken und Mikrofon. Die Daten werden über eine REST API verarbeitet und auf einem E-Ink Display im Foyer visualisiert.
 
 ## 🛠️ Tech Stack
 

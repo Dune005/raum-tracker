@@ -32,7 +32,6 @@ Jedes Gerät hat einen eindeutigen API-Schlüssel zur Sicherheit und speichert, 
 Ein Sensor ist eine konkrete Messquelle an einem Gerät. Das können sein:
 - **Lichtschranken** (erkennen Personen)
 - **Mikrofon** (misst Lautstärke)
-- **Bewegungsmelder/PIR** (erkennt Bewegung)
 - **Distanzmesser** (misst Abstand)
 
 Jeder Sensor gehört zu einem Gerät und hat eine bestimmte Aufgabe.
@@ -83,7 +82,6 @@ Diese Events sind die Basis für die Personenzählung. Wenn wir alle IN minus al
 Diese Tabelle enthält die **berechnete Auslastung** zu verschiedenen Zeitpunkten. Hier wird kombiniert:
 - Personenzählung (aus flow_events)
 - Lautstärke (aus Mikrofon)
-- Bewegungen (aus PIR)
 
 Das Ergebnis ist ein **Level**:
 - **LOW** = wenig los

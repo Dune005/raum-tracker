@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS device (
 CREATE TABLE IF NOT EXISTS sensor (
   id           CHAR(36)   NOT NULL,
   device_id    CHAR(36)   NOT NULL,
-  type         ENUM('LIGHT_BARRIER','MICROPHONE','PIR','DISTANCE') NOT NULL,
+  type         ENUM('LIGHT_BARRIER','MICROPHONE','DISTANCE') NOT NULL,
   unit         VARCHAR(20) NULL,          -- "mm", "dB", "bool" …
   config       JSON        NULL,          -- Kalibrier-/Schwellwerte
   is_active    TINYINT(1)  NOT NULL DEFAULT 1,

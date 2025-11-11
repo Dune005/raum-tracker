@@ -15,7 +15,7 @@
 ## Mikrocontroller-Endpoints
 
 ### 1. POST /sensor/reading
-Speichert eine Sensor-Messung (Mikrofon, PIR, Distanz).
+Speichert eine Sensor-Messung (Mikrofon, Distanz).
 
 **Auth:** ✅ API-Key erforderlich
 
@@ -340,7 +340,7 @@ Rohdaten der Flow-Events (IN/OUT).
 - API-Key: `test_key_gate_123456`
 - Device-ID: `770e8400-e29b-41d4-a716-446655440001`
 
-**Mikrocontroller 2 (Audio/PIR):**
+**Mikrocontroller 2 (Audio):**
 - API-Key: `test_key_audio_789012`
 - Device-ID: `770e8400-e29b-41d4-a716-446655440002`
 

@@ -597,7 +597,7 @@ Ein PHP-Cron-Job läuft alle 60-120 Sekunden und:
 1. Liest die letzten Flow-Events (IN/OUT)
 2. Berechnet den Netto-Personensaldo
 3. Aggregiert Mikrofon-Daten (durchschnittliche dB)
-4. Aggregiert PIR/Motion-Daten
+4. Wendet Schwellenwerte an
 5. Wendet die `threshold_profile`-Regeln an (Fusion)
 6. Speichert einen neuen `occupancy_snapshot`-Eintrag
 

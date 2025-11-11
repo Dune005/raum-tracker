@@ -27,10 +27,10 @@ Hier ist eine klare Übersicht deines Schemas. Pro Tabelle: Zweck, wichtigste Sp
 **Wofür?** Konkrete Messquellen am Gerät.
 **Wichtige Spalten:**
 
-* `type` (`LIGHT_BARRIER`, `MICROPHONE`, `PIR`, `DISTANCE`)
+* `type` (`LIGHT_BARRIER`, `MICROPHONE`, `DISTANCE`)
 * `unit` (z. B. `dB`, `bool`, `mm`), `config` (JSON für Kalibrierung/Schwellen)
 * `device_id` (an welchem Gerät)
-  **Nutzung:** Definiert, **woher** Rohdaten kommen (z. B. Lichtschranke A/B, Mikrofon, PIR).
+  **Nutzung:** Definiert, **woher** Rohdaten kommen (z. B. Lichtschranke A/B, Mikrofon).
 
 ---
 
@@ -54,7 +54,7 @@ Hier ist eine klare Übersicht deines Schemas. Pro Tabelle: Zweck, wichtigste Sp
 * `sensor_id`, `ts` (Zeitstempel)
 * `value_num` / `value_text` / `value_json` (flexibel je Sensor)
 * `quality` (`OK`, `NOISE`, `DROPPED`)
-  **Nutzung:** Mikrofon-RMS, PIR-Impulse, Distanzwerte; Basis für spätere Auswertungen.
+  **Nutzung:** Mikrofon-RMS, Distanzwerte; Basis für spätere Auswertungen.
 
 ---
 
@@ -78,7 +78,7 @@ Hier ist eine klare Übersicht deines Schemas. Pro Tabelle: Zweck, wichtigste Sp
 * `level` (`LOW`, `MEDIUM`, `HIGH`)
 * `method` (`FLOW_ONLY`, `NOISE_ONLY`, `FUSION`)
 * `noise_db`, `motion_count`, `window_seconds`, `ts`, `space_id`
-  **Nutzung:** Das ist der Wert fürs **Display** und fürs Dashboard. Entsteht z. B. alle 60–120 s durch euren Server-Job (Fusion aus Flow + Mikro + PIR).
+  **Nutzung:** Das ist der Wert fürs **Display** und fürs Dashboard. Entsteht z. B. alle 60–120 s durch euren Server-Job (Fusion aus Flow + Mikro).
 
 ---
 
@@ -140,4 +140,4 @@ Konfiguration & Monitoring laufen über `threshold_profile`, `heartbeat`, `calib
 
 ---
 
-Wenn du willst, erstelle ich dir noch ein kleines **Insert-Beispiel** (1 Raum, 1 Gate mit Lichtschranken A/B, Mikro & PIR, Default-Thresholds) exakt passend zu deinem MySQL-Schema – dann kannst du in phpMyAdmin sofort testen.
+Wenn du willst, erstelle ich dir noch ein kleines **Insert-Beispiel** (1 Raum, 1 Gate mit Lichtschranken A/B, Mikro, Default-Thresholds) exakt passend zu deinem MySQL-Schema – dann kannst du in phpMyAdmin sofort testen.

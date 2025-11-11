@@ -106,24 +106,7 @@ try {
         
         logMessage("  → Lautstärke (Ø 24h): " . ($noiseDelta ? "{$noiseDelta} dB" : "keine Daten"));
         
-        // 3. Bewegungszähler (letzte 24 Stunden - TEMPORÄR FÜR TESTS)
-        $queryMotion = "SELECT COUNT(*) as motion_count
-                        FROM reading r
-                        JOIN sensor s ON r.sensor_id = s.id
-                        JOIN device d ON s.device_id = d.id
-                        WHERE d.space_id = :space_id
-                        AND s.type = 'PIR'
-                        AND r.ts >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-                        AND r.value_num > 0";
-        $stmtMotion = $db->prepare($queryMotion);
-        $stmtMotion->bindParam(':space_id', $spaceId);
-        $stmtMotion->execute();
-        $motionResult = $stmtMotion->fetch(PDO::FETCH_ASSOC);
-        $motionCount = (int)$motionResult['motion_count'];
-        
-        logMessage("  → Bewegungen (24h): {$motionCount}");
-        
-        // 4. Schwellenwerte holen (JSON-Format)
+        // 3. Schwellenwerte holen (JSON-Format)
         $queryThresholds = "SELECT noise_levels, motion_levels
                             FROM threshold_profile
                             WHERE space_id = :space_id
@@ -167,24 +150,21 @@ try {
         
         // 6. Methode bestimmen
         $method = 'FLOW_ONLY';
-        if ($noiseDelta !== null && $motionCount > 0) {
+        if ($noiseDelta !== null) {
             $method = 'FUSION';
-        } elseif ($noiseDelta !== null) {
-            $method = 'NOISE_ONLY';
         }
         
         // 7. Snapshot speichern
         $queryInsert = "INSERT INTO occupancy_snapshot 
-                        (space_id, ts, people_estimate, level, noise_db, motion_count, method)
+                        (space_id, ts, people_estimate, level, noise_db, method)
                         VALUES 
-                        (:space_id, NOW(), :people, :level, :noise, :motion, :method)";
+                        (:space_id, NOW(), :people, :level, :noise, :method)";
         
         $stmtInsert = $db->prepare($queryInsert);
         $stmtInsert->bindParam(':space_id', $spaceId);
         $stmtInsert->bindParam(':people', $peopleEstimate);
         $stmtInsert->bindParam(':level', $level);
         $stmtInsert->bindValue(':noise', $noiseDelta, PDO::PARAM_STR);
-        $stmtInsert->bindParam(':motion', $motionCount);
         $stmtInsert->bindParam(':method', $method);
         
         if ($stmtInsert->execute()) {
