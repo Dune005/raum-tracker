@@ -434,12 +434,12 @@
                         <div class="d-flex justify-content-between align-items-center mb-4">
                             <div>
                                 <h5 class="fw-bold mb-1">
-                                    <i class="bi bi-calendar-week me-2"></i>Wochenvergleich Mittagsauslastung
+                                    <i class="bi bi-calendar-week me-2"></i>Wochenvergleich Peak-Auslastung
                                 </h5>
-                                <p class="small text-secondary mb-0">Durchschnittliche Personenanzahl 10-14 Uhr (Letzte 7 Tage)</p>
+                                <p class="small text-secondary mb-0">Höchste Personenanzahl pro Tag (Letzte 7 Tage)</p>
                             </div>
                             <span class="badge bg-success bg-opacity-25 text-success border border-success">
-                                10-14 Uhr
+                                Peak-Werte
                             </span>
                         </div>
                         <div style="position: relative; height: 300px;">
@@ -543,25 +543,23 @@
                     document.getElementById('sound-bar').style.width = '0%';
                 }
 
-                // Update signal time
-                const seconds = data.seconds_since_update;
-                let signalText = '';
-                if (seconds < 60) {
-                    signalText = `vor ${seconds}s`;
-                } else if (seconds < 3600) {
-                    signalText = `vor ${Math.floor(seconds / 60)}min`;
+                // Gate Controller Status (separate Timestamps!)
+                const secondsGate = data.seconds_since_count_update || 999999;
+                let signalTextGate = '';
+                if (secondsGate < 60) {
+                    signalTextGate = `vor ${secondsGate}s`;
+                } else if (secondsGate < 3600) {
+                    signalTextGate = `vor ${Math.floor(secondsGate / 60)}min`;
                 } else {
-                    signalText = `vor ${Math.floor(seconds / 3600)}h`;
+                    signalTextGate = `vor ${Math.floor(secondsGate / 3600)}h`;
                 }
 
-                // Update beide Controller mit gleichem Status (da sie vom selben PHP kommen)
-                // Gate Controller
                 const statusGate = document.getElementById('controller-gate-status');
-                document.getElementById('controller-gate-signal').textContent = signalText;
-                if (seconds < 5) {
+                document.getElementById('controller-gate-signal').textContent = signalTextGate;
+                if (secondsGate < 10) {
                     statusGate.className = 'badge status-online';
                     statusGate.innerHTML = '<span class="live-indicator me-1"></span>Online';
-                } else if (seconds < 15) {
+                } else if (secondsGate < 30) {
                     statusGate.className = 'badge status-warning';
                     statusGate.innerHTML = '<i class="bi bi-exclamation-circle-fill me-1"></i>Delay';
                 } else {
@@ -569,13 +567,23 @@
                     statusGate.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Offline';
                 }
 
-                // Audio Controller
+                // Audio Controller Status (separate Timestamps!)
+                const secondsAudio = data.seconds_since_sound_update || 999999;
+                let signalTextAudio = '';
+                if (secondsAudio < 60) {
+                    signalTextAudio = `vor ${secondsAudio}s`;
+                } else if (secondsAudio < 3600) {
+                    signalTextAudio = `vor ${Math.floor(secondsAudio / 60)}min`;
+                } else {
+                    signalTextAudio = `vor ${Math.floor(secondsAudio / 3600)}h`;
+                }
+
                 const statusAudio = document.getElementById('controller-audio-status');
-                document.getElementById('controller-audio-signal').textContent = signalText;
-                if (seconds < 5) {
+                document.getElementById('controller-audio-signal').textContent = signalTextAudio;
+                if (secondsAudio < 70) {
                     statusAudio.className = 'badge status-online';
                     statusAudio.innerHTML = '<span class="live-indicator me-1"></span>Online';
-                } else if (seconds < 15) {
+                } else if (secondsAudio < 90) {
                     statusAudio.className = 'badge status-warning';
                     statusAudio.innerHTML = '<i class="bi bi-exclamation-circle-fill me-1"></i>Delay';
                 } else {
@@ -610,17 +618,51 @@
             }
         }
 
-        // Load Today Stats
+        // Load Today Stats (Peak aus Snapshots)
         async function loadTodayStats() {
             try {
-                const response = await fetch(`${API_BASE}/statistics/today?space_id=${SPACE_ID}`);
+                // Heute von 00:00 bis jetzt + 2 Stunden
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const tomorrow = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+                const from = today.toISOString().slice(0, 19).replace('T', ' ');
+                const to = tomorrow.toISOString().slice(0, 19).replace('T', ' ');
+
+                // Hole Snapshots von heute
+                const response = await fetch(`${API_BASE}/occupancy/history?space_id=${SPACE_ID}&from=${from}&to=${to}&interval=5min`);
                 const data = await response.json();
 
-                if (data.success) {
-                    const d = data.data;
-                    // Stoßzeit: Peak-Zeit mit Personenanzahl
-                    document.getElementById('peak-time').textContent = d.peak_occupancy?.time || '-';
-                    document.getElementById('peak-people').textContent = d.peak_occupancy?.people_estimate || '-';
+                if (data.success && data.data.datapoints && data.data.datapoints.length > 0) {
+                    const datapoints = data.data.datapoints;
+                    
+                    // Finde Snapshot mit höchster Personenanzahl
+                    let peakSnapshot = null;
+                    let peakPeople = 0;
+                    
+                    for (const point of datapoints) {
+                        const people = Math.round(point.people_estimate_avg || 0);
+                        if (people > peakPeople) {
+                            peakPeople = people;
+                            peakSnapshot = point;
+                        }
+                    }
+                    
+                    if (peakSnapshot) {
+                        const peakTime = new Date(peakSnapshot.timestamp);
+                        const timeString = peakTime.toLocaleTimeString('de-CH', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                        });
+                        
+                        document.getElementById('peak-time').textContent = timeString;
+                        document.getElementById('peak-people').textContent = peakPeople;
+                    } else {
+                        document.getElementById('peak-time').textContent = '-';
+                        document.getElementById('peak-people').textContent = '-';
+                    }
+                } else {
+                    document.getElementById('peak-time').textContent = '-';
+                    document.getElementById('peak-people').textContent = '-';
                 }
             } catch (error) {
                 console.error('Stats Error:', error);
@@ -637,7 +679,7 @@
                 data: {
                     labels: ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'],
                     datasets: [{
-                        label: 'Ø Personen (10-14 Uhr)',
+                        label: 'Peak Personen',
                         data: [0, 0, 0, 0, 0, 0, 0],
                         backgroundColor: [
                             'rgba(59, 130, 246, 0.7)',
@@ -678,10 +720,10 @@
                             padding: 12,
                             callbacks: {
                                 label: function(context) {
-                                    return 'Ø ' + context.parsed.y + ' Personen';
+                                    return 'Peak: ' + context.parsed.y + ' Personen';
                                 },
                                 afterLabel: function(context) {
-                                    return 'Zeitraum: 10:00 - 14:00 Uhr';
+                                    return 'Höchste Auslastung des Tages';
                                 }
                             }
                         }
@@ -721,81 +763,54 @@
             });
         }
 
-        // Load Weekly Data (10-14 Uhr)
+        // Load Weekly Data (Peak-Auslastung pro Tag aus Snapshots)
         async function loadWeeklyData() {
             try {
                 // Letzte 7 Tage
                 const now = new Date();
                 const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                const from = sevenDaysAgo.toISOString();
-                const to = now.toISOString();
+                const from = sevenDaysAgo.toISOString().slice(0, 19).replace('T', ' ');
+                const to = now.toISOString().slice(0, 19).replace('T', ' ');
 
-                const response = await fetch(`${API_BASE}/flow/events?space_id=${SPACE_ID}&from=${from}&to=${to}&limit=1000`);
+                // Hole Snapshots der letzten 7 Tage
+                const response = await fetch(`${API_BASE}/occupancy/history?space_id=${SPACE_ID}&from=${from}&to=${to}&interval=5min`);
                 const data = await response.json();
 
-                if (data.success && data.data.events && data.data.events.length > 0) {
-                    const events = data.data.events;
-                    events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-
-                    // Array für jeden Wochentag [Mo, Di, Mi, Do, Fr, Sa, So]
-                    const weekdayData = [[], [], [], [], [], [], []];
-
-                    // Durch die letzten 7 Tage iterieren
-                    for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
-                        const dayDate = new Date(now.getTime() - dayOffset * 24 * 60 * 60 * 1000);
-                        const dayStart = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 10, 0, 0);
-                        const dayEnd = new Date(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate(), 14, 0, 0);
-                        const weekday = dayDate.getDay(); // 0=Sonntag, 1=Montag, ..., 6=Samstag
-                        const weekdayIndex = weekday === 0 ? 6 : weekday - 1; // Umrechnen zu 0=Montag, 6=Sonntag
-
-                        // Filtere Events nur für diesen spezifischen Tag zwischen 10-14 Uhr
-                        const dayEvents = events.filter(event => {
-                            const eventTime = new Date(event.timestamp);
-                            return eventTime >= dayStart && eventTime <= dayEnd;
-                        });
-
-                        // Berechne durchschnittliche Personenanzahl für diesen Tag (10-14 Uhr)
-                        let currentTime = new Date(dayStart);
-                        let dayTotal = 0;
-                        let intervalCount = 0;
-
-                        while (currentTime <= dayEnd) {
-                            const timeLimit = new Date(currentTime);
-                            let netPeople = 0;
-
-                            // Zähle nur Events bis zu diesem Zeitpunkt innerhalb des Tages
-                            for (const event of dayEvents) {
-                                const eventTime = new Date(event.timestamp);
-                                if (eventTime <= timeLimit) {
-                                    if (event.direction === 'IN') {
-                                        netPeople++;
-                                    } else if (event.direction === 'OUT') {
-                                        netPeople--;
-                                    }
-                                }
-                            }
-
-                            netPeople = Math.max(0, netPeople);
-                            dayTotal += netPeople;
-                            intervalCount++;
-
-                            currentTime = new Date(currentTime.getTime() + 15 * 60 * 1000);
+                if (data.success && data.data.datapoints && data.data.datapoints.length > 0) {
+                    const datapoints = data.data.datapoints;
+                    
+                    // Array für Peak pro Wochentag [Mo, Di, Mi, Do, Fr, Sa, So]
+                    const weekdayPeaks = [0, 0, 0, 0, 0, 0, 0];
+                    
+                    // Gruppiere Snapshots nach Tag und finde Peak pro Tag
+                    const dayPeaks = {}; // Key: YYYY-MM-DD, Value: max people_estimate
+                    
+                    for (const point of datapoints) {
+                        const timestamp = new Date(point.timestamp);
+                        const dateKey = timestamp.toISOString().slice(0, 10); // YYYY-MM-DD
+                        const people = Math.round(point.people_estimate_avg || 0);
+                        
+                        // Aktualisiere Peak für diesen Tag
+                        if (!dayPeaks[dateKey] || people > dayPeaks[dateKey]) {
+                            dayPeaks[dateKey] = people;
                         }
-
-                        const dayAvg = intervalCount > 0 ? dayTotal / intervalCount : 0;
-                        weekdayData[weekdayIndex].push(dayAvg);
                     }
-
-                    // Durchschnitt pro Wochentag berechnen
-                    const weekdayAverages = weekdayData.map(dayData => {
-                        if (dayData.length === 0) return 0;
-                        const sum = dayData.reduce((a, b) => a + b, 0);
-                        return Math.round(sum / dayData.length);
-                    });
-
+                    
+                    // Ordne Peaks den Wochentagen zu
+                    for (const [dateKey, peak] of Object.entries(dayPeaks)) {
+                        const date = new Date(dateKey + 'T12:00:00'); // Noon um Timezone-Probleme zu vermeiden
+                        const weekday = date.getDay(); // 0=Sonntag, 1=Montag, ..., 6=Samstag
+                        const weekdayIndex = weekday === 0 ? 6 : weekday - 1; // Umrechnen zu 0=Montag, 6=Sonntag
+                        
+                        // Verwende den höchsten Peak für diesen Wochentag (falls mehrere Tage)
+                        if (peak > weekdayPeaks[weekdayIndex]) {
+                            weekdayPeaks[weekdayIndex] = peak;
+                        }
+                    }
+                    
                     // Chart aktualisieren
                     if (weeklyChart) {
-                        weeklyChart.data.datasets[0].data = weekdayAverages;
+                        weeklyChart.data.datasets[0].data = weekdayPeaks;
                         weeklyChart.update('none');
                     }
                 } else {
@@ -921,91 +936,51 @@
             });
         }
 
-        // Load History Data (Flow-Events basiert)
+        // Load History Data (Occupancy-Snapshots vom Cron-Job)
         async function loadHistoryData() {
             try {
-                // Heute von 00:00 bis jetzt, alle Flow-Events holen
+                // Heute von 00:00 bis jetzt + 2 Stunden (um Zeitzonen-Differenzen abzufangen)
                 const now = new Date();
                 const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const from = today.toISOString();
-                const to = now.toISOString();
+                const tomorrow = new Date(now.getTime() + 2 * 60 * 60 * 1000); // +2 Stunden Puffer
+                const from = today.toISOString().slice(0, 19).replace('T', ' ');
+                const to = tomorrow.toISOString().slice(0, 19).replace('T', ' ');
 
-                const response = await fetch(`${API_BASE}/flow/events?space_id=${SPACE_ID}&from=${from}&to=${to}&limit=1000`);
+                // Hole Snapshots vom Server
+                const response = await fetch(`${API_BASE}/occupancy/history?space_id=${SPACE_ID}&from=${from}&to=${to}&interval=5min`);
                 const data = await response.json();
 
-                if (data.success && data.data.events && data.data.events.length > 0) {
-                    const events = data.data.events;
+                if (data.success && data.data.datapoints && data.data.datapoints.length > 0) {
+                    const datapoints = data.data.datapoints;
                     
-                    // Events nach Zeit sortieren (älteste zuerst)
-                    events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-                    
-                    // Zeitreihe mit 15-Minuten-Intervallen erstellen
                     const intervals = [];
                     const peopleCount = [];
-                    let currentCount = 0;
                     
-                    // Start um 00:00
-                    let currentTime = new Date(today);
-                    const endTime = new Date(now);
-                    
-                    // Alle 15 Minuten ein Datenpunkt
-                    while (currentTime <= endTime) {
-                        // Zähle alle Events bis zu diesem Zeitpunkt
-                        const timeLimit = new Date(currentTime);
-                        
-                        // Berechne Netto-Personen bis zu diesem Zeitpunkt
-                        let netPeople = 0;
-                        for (const event of events) {
-                            const eventTime = new Date(event.timestamp);
-                            if (eventTime <= timeLimit) {
-                                if (event.direction === 'IN') {
-                                    netPeople++;
-                                } else if (event.direction === 'OUT') {
-                                    netPeople--;
-                                }
-                            } else {
-                                break; // Events sind sortiert
-                            }
-                        }
-                        
-                        // Negative Werte vermeiden
-                        netPeople = Math.max(0, netPeople);
-                        
-                        intervals.push(currentTime.toLocaleTimeString('de-CH', { 
+                    // Verwende die tatsächlichen Snapshot-Zeitpunkte (keine künstlichen Intervalle)
+                    for (const point of datapoints) {
+                        const timestamp = new Date(point.timestamp);
+                        intervals.push(timestamp.toLocaleTimeString('de-CH', { 
                             hour: '2-digit', 
                             minute: '2-digit' 
                         }));
-                        peopleCount.push(netPeople);
-                        
-                        // Nächstes 15-Minuten-Intervall
-                        currentTime = new Date(currentTime.getTime() + 15 * 60 * 1000);
+                        // Explizite Prüfung: auch 0 Personen sollen angezeigt werden
+                        const value = point.people_estimate_avg !== null && point.people_estimate_avg !== undefined 
+                            ? Math.round(point.people_estimate_avg) 
+                            : 0;
+                        peopleCount.push(value);
                     }
 
                     // Chart aktualisieren
                     if (occupancyChart) {
                         occupancyChart.data.labels = intervals;
                         occupancyChart.data.datasets[0].data = peopleCount;
-                        occupancyChart.update('none'); // 'none' für bessere Performance
+                        occupancyChart.update('none');
                     }
                 } else {
-                    // Keine Events -> leerer Chart mit Zeitachse
-                    const intervals = [];
-                    const peopleCount = [];
-                    let currentTime = new Date(today);
-                    const endTime = new Date(now);
-                    
-                    while (currentTime <= endTime) {
-                        intervals.push(currentTime.toLocaleTimeString('de-CH', { 
-                            hour: '2-digit', 
-                            minute: '2-digit' 
-                        }));
-                        peopleCount.push(0);
-                        currentTime = new Date(currentTime.getTime() + 15 * 60 * 1000);
-                    }
-                    
+                    // Keine Snapshots vorhanden - leeres Chart
                     if (occupancyChart) {
-                        occupancyChart.data.labels = intervals;
-                        occupancyChart.data.datasets[0].data = peopleCount;
+                        occupancyChart.data.labels = [];
+                        occupancyChart.data.datasets[0].data = [];
                         occupancyChart.update('none');
                     }
                 }

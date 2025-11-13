@@ -11,12 +11,25 @@
  * - Oder manuell testen: php generate_occupancy_snapshot.php
  */
 
+// Lade .env-Datei direkt (vor allen anderen Prüfungen)
+$envFile = __DIR__ . '/../config/.env';
+if (file_exists($envFile)) {
+    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        if (strpos(trim($line), '#') === 0) continue;
+        if (strpos($line, '=') === false) continue;
+        list($key, $value) = explode('=', $line, 2);
+        $_ENV[trim($key)] = trim($value);
+        putenv(trim($key) . '=' . trim($value));
+    }
+}
+
 require_once __DIR__ . '/../config/Database.php';
 
 // ========== SICHERHEIT: TOKEN-AUTHENTIFIZIERUNG ==========
 // Nur Aufrufe mit gültigem Token erlauben (für Raspberry Pi Cron)
 // Token wird aus .env geladen (sicherer!)
-$CRON_SECRET = $_ENV['CRON_SECRET'] ?? null;
+$CRON_SECRET = $_ENV['CRON_SECRET'] ?? getenv('CRON_SECRET') ?? null;
 
 if (!$CRON_SECRET) {
     http_response_code(500);
@@ -38,8 +51,8 @@ date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 
 // ========== ZEITFENSTER-KONFIGURATION ==========
 // Snapshots nur in diesem Zeitfenster erstellen
-$ACTIVE_START_TIME = '10:00';  // Ab 10:00 Uhr
-$ACTIVE_END_TIME = '14:00';    // Bis 14:00 Uhr (nicht inklusiv)
+$ACTIVE_START_TIME = '12:00';  // Ab 12:00 Uhr
+$ACTIVE_END_TIME = '17:00';    // Bis 17:00 Uhr (nicht inklusiv)
 
 // Aktuelle Zeit prüfen
 $currentTime = date('H:i');
@@ -75,20 +88,54 @@ try {
         
         logMessage("Verarbeite Space: {$spaceName} ({$spaceId})");
         
-        // 1. Netto-Personenzahl aus Flow-Events (heute)
-        $queryNet = "SELECT net_people FROM v_people_net_today WHERE space_id = :space_id";
-        $stmtNet = $db->prepare($queryNet);
-        $stmtNet->bindParam(':space_id', $spaceId);
-        $stmtNet->execute();
-        $netResult = $stmtNet->fetch(PDO::FETCH_ASSOC);
-        $peopleEstimate = $netResult ? (int)$netResult['net_people'] : 0;
+        // 1. Live-Personenzahl vom Arduino (update_count.php)
+        $peopleEstimate = 0;
+        $arduinoAvailable = false;
+        $arduinoUrl = 'https://corner.klaus-klebband.ch/update_count.php';
         
-        // Negative Werte auf 0 setzen
-        if ($peopleEstimate < 0) {
-            $peopleEstimate = 0;
+        try {
+            // cURL verwenden (statt file_get_contents, da oft auf Servern deaktiviert)
+            if (function_exists('curl_init')) {
+                $ch = curl_init($arduinoUrl);
+                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                
+                $arduinoResponse = curl_exec($ch);
+                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $curlError = curl_error($ch);
+                curl_close($ch);
+                
+                if ($arduinoResponse && $httpCode == 200) {
+                    $arduinoData = json_decode($arduinoResponse, true);
+                    if ($arduinoData && isset($arduinoData['count']) && $arduinoData['has_data']) {
+                        $peopleEstimate = max(0, (int)$arduinoData['count']);
+                        $arduinoAvailable = true;
+                        logMessage("  → Personen (Arduino Live): {$peopleEstimate}");
+                    } else {
+                        logMessage("  → Arduino: Keine Daten verfügbar (has_data=false)");
+                    }
+                } else {
+                    logMessage("  → Arduino: Verbindungsfehler (HTTP {$httpCode}, cURL: {$curlError})");
+                }
+            } else {
+                logMessage("  → Arduino: cURL nicht verfügbar");
+            }
+        } catch (Exception $e) {
+            logMessage("  → Arduino: Fehler beim Abrufen: " . $e->getMessage());
         }
         
-        logMessage("  → Personen (Flow-basiert): {$peopleEstimate}");
+        // Fallback: Flow-Events nur wenn Arduino NICHT verfügbar ist
+        if (!$arduinoAvailable) {
+            $queryNet = "SELECT net_people FROM v_people_net_today WHERE space_id = :space_id";
+            $stmtNet = $db->prepare($queryNet);
+            $stmtNet->bindParam(':space_id', $spaceId);
+            $stmtNet->execute();
+            $netResult = $stmtNet->fetch(PDO::FETCH_ASSOC);
+            $peopleEstimate = $netResult ? max(0, (int)$netResult['net_people']) : 0;
+            logMessage("  → Personen (Fallback Flow-Events): {$peopleEstimate}");
+        }
         
         // 2. Durchschnittliche Lautstärke (letzte 24 Stunden - TEMPORÄR FÜR TESTS)
         $queryNoise = "SELECT AVG(r.value_num) as avg_noise

@@ -96,3 +96,6 @@ api_test_output/
 Anleitungen/
 zum_loeschen
 raspberry-pi
+wlan_eduroam
+ping_controllers.sh
+reset_flow_today.php
