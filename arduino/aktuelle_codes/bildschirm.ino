@@ -13,29 +13,34 @@
 
 // ===== WiFi Konfiguration =====
 const char* SSID = "HLY-77900";
-const char* PASSWORD = "0jgp-42ej-ah8y-hnwz";  // Öffentliches Netz
+const char* PASSWORD = "0jgp-42ej-ah8y-hnwz";
 
 // ===== API Konfiguration =====
-const char* apiBaseURL = "https://corner.klaus-klebband.ch/api/v1";
-const char* apiFlowEndpoint = "https://corner.klaus-klebband.ch/api/v1/gate/flow";
-const char* apiKey = "test_key_gate_123456";
-const char* deviceID = "770e8400-e29b-41d4-a716-446655440001";
-const char* gateID = "660e8400-e29b-41d4-a716-446655440001";
+// WICHTIG: /occupancy/current ist der korrekte Endpoint (nicht /occupancy)
+const char* apiOccupancyEndpoint = "https://corner.klaus-klebband.ch/api/v1/occupancy/current";
+
+// space_id aus generate_occupancy_snapshot.php
+const char* space_id = "880e8400-e29b-41d4-a716-446655440001";
+const char* device_id = "990e8400-e29b-41d4-a716-44665544000";
 
 // Daten-Struktur für Live-Daten vom Server
 struct LiveData {
-  int personenanzahl;
-  int lautstaerke_db;
-  String stosszeit;
+  int personenanzahl;           // Feld: people_estimate
+  int lautstaerke_db;           // Feld: noise_db
+  String stosszeit;             // Feld: später von statistics/today
+  String level;                 // Feld: level (LOW/MEDIUM/HIGH)
+  String timestamp;             // Feld: ts
 };
 
 LiveData currentData = {
   .personenanzahl = 0,
   .lautstaerke_db = 0,
-  .stosszeit = "--:--"
+  .stosszeit = "--:--",
+  .level = "LOW",
+  .timestamp = ""
 };
 
-// Zeit-Variablen
+// Zeit-Variablen (für Footer)
 uint16_t currentYear = 2025;
 uint8_t currentMonth = 11;
 uint8_t currentDay = 12;
@@ -52,214 +57,216 @@ const int QUARTER_HEIGHT = CONTENT_HEIGHT / 2;
 
 // Update-Variablen
 unsigned long lastUpdateTime = 0;
-const unsigned long UPDATE_INTERVAL = 30000;  // 30 Sekunden
+const unsigned long UPDATE_INTERVAL = 90000;  // 90 Sekunden
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
-  
-  Serial.println("\n\n=== Raumtracker Display Start ===");
-  
+  delay(500);
+
+  Serial.println("\n=== Raumtracker Display Start ===");
+
   display.init(115200, true, 2, false);
-  
-  // WiFi verbinden
+
   connectToWiFi();
-  
-  // NTP-Zeit synchronisieren
   syncTime();
-  
-  // Erste Daten abrufen
-  fetchLiveData();
-  updateDisplay();
+
+  // Erstes Laden und Anzeigen
+  if (fetchLiveData()) {
+    updateDisplay();
+  } else {
+    Serial.println("Erste Abfrage fehlgeschlagen");
+  }
 }
 
 void loop() {
-  unsigned long currentTime = millis();
-  
-  // Update Zeit
+  unsigned long now = millis();
+
   incrementTime();
-  
-  // Regelmäßig Live-Daten abrufen
-  if (currentTime - lastUpdateTime >= UPDATE_INTERVAL) {
-    lastUpdateTime = currentTime;
-    
-    Serial.println("Fetching live data...");
+
+  if (now - lastUpdateTime >= UPDATE_INTERVAL) {
+    lastUpdateTime = now;
+    Serial.println("\n--- Minute Update: fetching live data ---");
     if (fetchLiveData()) {
       updateDisplay();
     } else {
-      Serial.println("Fehler beim Abrufen der Daten");
+      Serial.println("ERROR: Fehler beim Abrufen der Live-Daten");
     }
   }
-  
-  delay(5000);  // 5 Sekunden Check-Intervall
+
+  delay(200);
 }
 
 // ===== WiFi Funktionen =====
 void connectToWiFi() {
   Serial.print("Verbinde mit WiFi: ");
   Serial.println(SSID);
-  
+
   WiFi.begin(SSID, PASSWORD);
-  
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
+  while (WiFi.status() != WL_CONNECTED && attempts < 60) {
+    delay(250);
     Serial.print(".");
     attempts++;
   }
-  
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n✓ WiFi verbunden!");
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
+    Serial.println("\n✓ WiFi verbunden");
+    Serial.print("IP: "); Serial.println(WiFi.localIP());
   } else {
-    Serial.println("\n✗ WiFi Verbindung fehlgeschlagen!");
+    Serial.println("\n✗ WiFi Verbindung fehlgeschlagen");
   }
 }
 
 // ===== NTP Zeit Synchronisierung =====
 void syncTime() {
   configTime(1 * 3600, 0, "pool.ntp.org", "time.nist.gov");
-  
-  Serial.print("Synchronisiere Zeit mit NTP...");
   time_t now = time(nullptr);
   int attempts = 0;
-  
   while (now < 24 * 3600 && attempts < 20) {
-    delay(500);
-    Serial.print(".");
+    delay(250);
     now = time(nullptr);
     attempts++;
   }
-  
-  if (now > 24 * 3600) {
-    Serial.println(" ✓");
-    updateTimeFromSystem();
-  } else {
-    Serial.println(" ✗ (verwendet Fallback-Zeit)");
-  }
+  if (now >= 24 * 3600) updateTimeFromSystem();
 }
 
 void updateTimeFromSystem() {
   time_t now = time(nullptr);
-  struct tm* timeinfo = localtime(&now);
-  
-  currentYear = 1900 + timeinfo->tm_year;
-  currentMonth = 1 + timeinfo->tm_mon;
-  currentDay = timeinfo->tm_mday;
-  currentHour = timeinfo->tm_hour;
-  currentMinute = timeinfo->tm_min;
+  struct tm* t = localtime(&now);
+  currentYear = 1900 + t->tm_year;
+  currentMonth = 1 + t->tm_mon;
+  currentDay = t->tm_mday;
+  currentHour = t->tm_hour;
+  currentMinute = t->tm_min;
 }
 
 void incrementTime() {
-  static unsigned long lastIncrement = 0;
-  unsigned long now = millis();
-  
-  if (now - lastIncrement >= 60000) {  // Jede Minute
-    lastIncrement = now;
+  static unsigned long lastInc = 0;
+  unsigned long m = millis();
+  if (m - lastInc >= 60000) {
+    lastInc = m;
     currentMinute++;
-    
-    if (currentMinute >= 60) {
-      currentMinute = 0;
-      currentHour++;
-      
-      if (currentHour >= 24) {
-        currentHour = 0;
-        currentDay++;
-        
-        if (currentDay > 31) {  // Vereinfachte Prüfung
-          currentDay = 1;
-          currentMonth++;
-          
-          if (currentMonth > 12) {
-            currentMonth = 1;
-            currentYear++;
-          }
-        }
-      }
-    }
+    if (currentMinute >= 60) { currentMinute = 0; currentHour++; }
+    if (currentHour >= 24) { currentHour = 0; currentDay++; }
   }
 }
 
 // ===== API Anfragen =====
+// Holt Daten von /occupancy/current?space_id=...
+// Response-Felder (aus current.php):
+//   - people_estimate   -> personenanzahl
+//   - level             -> level (LOW/MEDIUM/HIGH)
+//   - noise_db          -> lautstaerke_db
+//   - ts                -> timestamp (YYYY-MM-DD HH:MM:SS)
 bool fetchLiveData() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi nicht verbunden");
+    Serial.println("ERROR: WiFi nicht verbunden");
     return false;
   }
-  
+
   HTTPClient http;
+  String url = String(apiOccupancyEndpoint) + "?space_id=" + space_id;
+  
+  Serial.print("Anfrage URL: ");
+  Serial.println(url);
+
+  http.begin(url);
   http.setConnectTimeout(5000);
   http.setTimeout(5000);
-  
-  // Header vorbereiten
-  String url = String(apiFlowEndpoint) + "?gateID=" + gateID;
-  
-  http.begin(url);
-  http.addHeader("Authorization", String("Bearer ") + apiKey);
-  http.addHeader("Content-Type", "application/json");
-  
-  Serial.print("GET: ");
-  Serial.println(url);
-  
-  int httpCode = http.GET();
-  
-  if (httpCode == 200) {
-    String payload = http.getString();
-    Serial.println("Response erhalten, Größe: " + String(payload.length()));
-    
-    if (parseFlowData(payload)) {
-      http.end();
-      return true;
-    }
-  } else {
-    Serial.print("HTTP Error: ");
-    Serial.println(httpCode);
-    
-    if (httpCode > 0) {
-      String payload = http.getString();
-      Serial.println("Response: " + payload);
-    }
-  }
-  
-  http.end();
-  return false;
-}
 
-bool parseFlowData(String jsonString) {
-  StaticJsonDocument<512> doc;
-  DeserializationError error = deserializeJson(doc, jsonString);
-  
-  if (error) {
-    Serial.print("JSON Parse Error: ");
-    Serial.println(error.c_str());
+  int httpCode = http.GET();
+  Serial.print("HTTP Code: ");
+  Serial.println(httpCode);
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.print("ERROR: HTTP Fehler ");
+    Serial.println(httpCode);
+    http.end();
     return false;
   }
+
+  String payload = http.getString();
+  Serial.print("Payload erhalten, Größe: ");
+  Serial.print(payload.length());
+  Serial.println(" Bytes");
+
+  http.end();
+
+  // JSON Parse
+  StaticJsonDocument<1024> doc;
+  DeserializationError err = deserializeJson(doc, payload);
+
+  if (err) {
+    Serial.print("ERROR: JSON Parse fehler: ");
+    Serial.println(err.c_str());
+    Serial.print("Raw Payload: ");
+    Serial.println(payload);
+    return false;
+  }
+
+  // Response-Struktur: { success: true, data: { ... } } oder direkt { people_estimate: ..., ... }
+  JsonVariant data = doc;
   
-  // Beispiel-Struktur: anpassen je nach API-Antwort
+  // Falls Daten in "data"-Feld verpackt sind
   if (doc.containsKey("data")) {
-    JsonObject data = doc["data"];
-    
-    if (data.containsKey("current_occupancy")) {
-      currentData.personenanzahl = data["current_occupancy"];
-      Serial.print("✓ Personen: ");
-      Serial.println(currentData.personenanzahl);
-    }
-    
-    if (data.containsKey("noise_level")) {
-      currentData.lautstaerke_db = data["noise_level"];
-      Serial.print("✓ Lautstärke: ");
-      Serial.print(currentData.lautstaerke_db);
-      Serial.println(" dB");
-    }
-    
-    if (data.containsKey("peak_time")) {
-      currentData.stosszeit = data["peak_time"].as<String>();
-      Serial.print("✓ Stoßzeit: ");
-      Serial.println(currentData.stosszeit);
+    data = doc["data"];
+  }
+
+  // Extrahiere Felder (Namen EXAKT wie in current.php)
+  if (data.containsKey("people_estimate") && !data["people_estimate"].isNull()) {
+    currentData.personenanzahl = data["people_estimate"].as<int>();
+    Serial.print("✓ people_estimate: ");
+    Serial.println(currentData.personenanzahl);
+  } else {
+    Serial.println("WARN: people_estimate nicht gefunden");
+    currentData.personenanzahl = 0;
+  }
+
+  if (data.containsKey("noise_db") && !data["noise_db"].isNull()) {
+    currentData.lautstaerke_db = (int)data["noise_db"].as<float>();
+    Serial.print("✓ noise_db: ");
+    Serial.println(currentData.lautstaerke_db);
+  } else {
+    Serial.println("WARN: noise_db nicht gefunden");
+    currentData.lautstaerke_db = 0;
+  }
+
+  if (data.containsKey("level") && !data["level"].isNull()) {
+    currentData.level = String((const char*)data["level"]);
+    Serial.print("✓ level: ");
+    Serial.println(currentData.level);
+  } else {
+    Serial.println("WARN: level nicht gefunden");
+    currentData.level = "LOW";
+  }
+
+  if (data.containsKey("timestamp") && !data["timestamp"].isNull()) {
+    currentData.timestamp = String((const char*)data["timestamp"]);
+    Serial.print("✓ timestamp: ");
+    Serial.println(currentData.timestamp);
+  } else if (data.containsKey("ts") && !data["ts"].isNull()) {
+    currentData.timestamp = String((const char*)data["ts"]);
+    Serial.print("✓ ts: ");
+    Serial.println(currentData.timestamp);
+  }
+
+  // Aktualisiere Footer-Zeit aus Timestamp
+  if (currentData.timestamp.length() >= 16) {
+    int y = currentData.timestamp.substring(0, 4).toInt();
+    int mo = currentData.timestamp.substring(5, 7).toInt();
+    int d = currentData.timestamp.substring(8, 10).toInt();
+    int hh = currentData.timestamp.substring(11, 13).toInt();
+    int mm = currentData.timestamp.substring(14, 16).toInt();
+    if (y > 2000) {
+      currentYear = y;
+      currentMonth = mo;
+      currentDay = d;
+      currentHour = hh;
+      currentMinute = mm;
     }
   }
-  
+
+  Serial.println("✓ Daten erfolgreich geparst");
   return true;
 }
 
@@ -267,12 +274,12 @@ bool parseFlowData(String jsonString) {
 void updateDisplay() {
   display.setFullWindow();
   display.firstPage();
-  
   do {
     display.fillScreen(GxEPD_WHITE);
     drawQuadrants();
     drawFooter();
   } while (display.nextPage());
+  Serial.println("Display aktualisiert");
 }
 
 void drawQuadrants() {
@@ -280,7 +287,7 @@ void drawQuadrants() {
   drawAuslastungQuadrant(QUARTER_WIDTH, 0, QUARTER_WIDTH, QUARTER_HEIGHT);
   drawLautstaerkeQuadrant(0, QUARTER_HEIGHT, QUARTER_WIDTH, QUARTER_HEIGHT);
   drawStosszeitQuadrant(QUARTER_WIDTH, QUARTER_HEIGHT, QUARTER_WIDTH, QUARTER_HEIGHT);
-  
+
   display.drawLine(QUARTER_WIDTH, 0, QUARTER_WIDTH, CONTENT_HEIGHT, GxEPD_BLACK);
   display.drawLine(0, QUARTER_HEIGHT, DISPLAY_WIDTH, QUARTER_HEIGHT, GxEPD_BLACK);
   display.drawLine(0, CONTENT_HEIGHT, DISPLAY_WIDTH, CONTENT_HEIGHT, GxEPD_BLACK);
@@ -288,10 +295,10 @@ void drawQuadrants() {
 
 void drawPersonenQuadrant(int x, int y, int width, int height) {
   int persons = currentData.personenanzahl;
-  
+
   uint16_t bgColor = GxEPD_WHITE;
   uint16_t textColor = GxEPD_BLACK;
-  
+
   if (persons < 6) {
     bgColor = GxEPD_WHITE;
     textColor = GxEPD_BLACK;
@@ -302,91 +309,90 @@ void drawPersonenQuadrant(int x, int y, int width, int height) {
     bgColor = GxEPD_RED;
     textColor = GxEPD_WHITE;
   }
-  
+
   display.fillRect(x, y, width, height, bgColor);
   display.drawRect(x, y, width, height, GxEPD_BLACK);
-  
+
   display.setFont(&FreeSans9pt7b);
   display.setTextColor(textColor);
   display.setCursor(x + 10, y + 25);
   display.println("PERSONEN");
-  
+
   display.setFont(&FreeSansBold24pt7b);
-  String value = "~" + String(persons);
-  
+  String value = String(persons);
+
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   display.getTextBounds(value, 0, 0, &tbx, &tby, &tbw, &tbh);
-  
+
   int textX = x + (width - tbw) / 2;
   int textY = y + height - 40;
-  
+
   display.setCursor(textX, textY);
   display.println(value);
 }
 
 void drawAuslastungQuadrant(int x, int y, int width, int height) {
-  int persons = currentData.personenanzahl;
-  
-  String category;
-  uint16_t bgColor;
-  uint16_t textColor;
-  
-  if (persons < 6) {
+  String category = "niedrig";
+  uint16_t bgColor = GxEPD_WHITE;
+  uint16_t textColor = GxEPD_BLACK;
+
+  // Verwende serverseitiges level
+  if (currentData.level.equalsIgnoreCase("LOW")) {
     category = "niedrig";
     bgColor = GxEPD_WHITE;
     textColor = GxEPD_BLACK;
-  } else if (persons < 20) {
+  } else if (currentData.level.equalsIgnoreCase("MEDIUM")) {
     category = "mittel";
     bgColor = GxEPD_YELLOW;
     textColor = GxEPD_BLACK;
-  } else {
+  } else if (currentData.level.equalsIgnoreCase("HIGH")) {
     category = "hoch";
     bgColor = GxEPD_RED;
     textColor = GxEPD_WHITE;
   }
-  
+
   display.fillRect(x, y, width, height, bgColor);
   display.drawRect(x, y, width, height, GxEPD_BLACK);
-  
+
   display.setFont(&FreeSans9pt7b);
   display.setTextColor(textColor);
   display.setCursor(x + 10, y + 25);
   display.println("AUSLASTUNG");
-  
+
   display.setFont(&FreeSansBold24pt7b);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   display.getTextBounds(category, 0, 0, &tbx, &tby, &tbw, &tbh);
-  
+
   int textX = x + (width - tbw) / 2;
   int textY = y + height - 40;
-  
+
   display.setCursor(textX, textY);
   display.println(category);
 }
 
 void drawLautstaerkeQuadrant(int x, int y, int width, int height) {
   display.drawRect(x, y, width, height, GxEPD_BLACK);
-  
+
   display.setFont(&FreeSans9pt7b);
   display.setTextColor(GxEPD_BLACK);
   display.setCursor(x + 10, y + 25);
-  display.println("LAUTSTARKE");
-  
+  display.println("LAUTSTÄRKE");
+
   String category = getLautstaerkeCategory(currentData.lautstaerke_db);
-  
+
   display.setFont(&FreeSansBold18pt7b);
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   display.getTextBounds(category, 0, 0, &tbx, &tby, &tbw, &tbh);
-  
+
   int textX = x + (width - tbw) / 2;
   int textY = y + height / 2 + 10;
-  
+
   display.setCursor(textX, textY);
   display.println(category);
-  
+
   display.setFont(&FreeSans9pt7b);
   String dbStr = "(" + String(currentData.lautstaerke_db) + " dB)";
   display.getTextBounds(dbStr, 0, 0, &tbx, &tby, &tbw, &tbh);
@@ -396,38 +402,37 @@ void drawLautstaerkeQuadrant(int x, int y, int width, int height) {
 
 void drawStosszeitQuadrant(int x, int y, int width, int height) {
   display.drawRect(x, y, width, height, GxEPD_BLACK);
-  
+
   display.setFont(&FreeSans9pt7b);
   display.setTextColor(GxEPD_BLACK);
   display.setCursor(x + 10, y + 25);
   display.println("STOSSZEIT");
-  
+
   display.setFont(&FreeSansBold24pt7b);
   String value = currentData.stosszeit;
-  
   int16_t tbx, tby;
   uint16_t tbw, tbh;
   display.getTextBounds(value, 0, 0, &tbx, &tby, &tbw, &tbh);
-  
+
   int textX = x + (width - tbw) / 2;
   int textY = y + height - 40;
-  
+
   display.setCursor(textX, textY);
   display.println(value);
 }
 
 void drawFooter() {
   int footerY = CONTENT_HEIGHT;
-  
+
   display.drawRect(0, footerY, DISPLAY_WIDTH, FOOTER_HEIGHT, GxEPD_BLACK);
-  
+
   display.setFont(&FreeSans9pt7b);
   display.setTextColor(GxEPD_BLACK);
-  
+
   String dateStr = formatDate();
   display.setCursor(10, footerY + 25);
   display.println(dateStr);
-  
+
   String timeStr = formatTime();
   int16_t tbx, tby;
   uint16_t tbw, tbh;
@@ -437,15 +442,11 @@ void drawFooter() {
 }
 
 String getLautstaerkeCategory(int db) {
-  if (db < 50) {
-    return "leise";
-  } else if (db < 65) {
-    return "mittel";
-  } else if (db < 80) {
-    return "laut";
-  } else {
-    return "sehr laut";
-  }
+  if (db <= 0) return "n/a";
+  if (db < 50) return "leise";
+  if (db < 65) return "mittel";
+  if (db < 80) return "laut";
+  return "sehr laut";
 }
 
 String formatDate() {
