@@ -9,7 +9,7 @@ Dieses Projekt erfasst die Auslastung des Aufenthaltsraums IM5 in Echtzeit mit L
 ## 🛠️ Tech Stack
 
 - **Backend:** PHP (Vanilla), MySQL, PDO
-- **Hardware:** 2x ESP32-C6-N8, VL6180X Lichtschranken, GY-SPH0645 Mikrofon
+- **Hardware:** 2x ESP32-C6-N8, VL6180X Lichtschranken, INMP441 I2S Mikrofon
 - **Display:** Waveshare 2.36" E-Ink (4 Farben)
 - **API:** RESTful JSON, Apache mit mod_rewrite
 

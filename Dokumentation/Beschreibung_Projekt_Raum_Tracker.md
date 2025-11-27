@@ -24,8 +24,8 @@ Unser Minimum Viable Product fokussiert sich auf die Erfassung und Visualisierun
 
 - **Lichtschranken zur Personenfluss-Messung (3 Sensoren: 2x VL53L0X + 1x VL6180X):** Wir haben drei Distanzsensoren am Treppenaufgang installiert – zwei VL53L0X für die Erkennung von Ein- und Ausgängen sowie einen VL6180X in der Mitte für die Validierung der Bewegung. Dies ermöglicht eine präzise Richtungserkennung (IN/OUT) durch eine 3-Sensor-Sequenzlogik, die Fehlzählungen verhindert und eine zuverlässige Schätzung des Personenflusses liefert. Die Sensoren messen im Bereich von 50-1200 mm und verwenden direkte Blockier-Erkennung statt Bewegungserkennung für höhere Zuverlässigkeit.
 
-- **Mikrofon um die Lautstärke im Raum zu messen (GY-SPH0645):**  
-  Wir planen hier mit einem Mikrofon die Lautstärke im Raum zu messen.
+- **Mikrofon um die Lautstärke im Raum zu messen (INMP441 I2S):**  
+  Wir setzen ein digitales INMP441 I2S Mikrofon ein, das die Lautstärke im Raum misst.
 
 ### **Visualisierung**
 
@@ -118,4 +118,3 @@ Datenbank. So stellen wir uns unser Backend vor (ERM). Bitte die API-Endpoints e
 
 - **Web-Dashboard**  
   Hier visualisieren wir alle gemessenen Daten auf einer Plattform. Eine einfache Programmierung mit html, css, js.
-
