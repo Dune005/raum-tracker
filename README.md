@@ -1,3 +1,4 @@
+![Raum-Tracker Banner](./Dokumentation/Bilder/banner_raumtracker.jpg)
 # 🏢 Raum-Tracker - Aufenthaltsraum IM5
 
 > Echtzeit-Erfassung der Raumauslastung mittels IoT-Sensoren und E-Ink Display
