@@ -12,8 +12,8 @@
 #include "GxEPD2_display_selection_new_style.h"
 
 // ===== WiFi Konfiguration =====
-const char* SSID = "HLY-77900";
-const char* PASSWORD = "0jgp-42ej-ah8y-hnwz";
+const char* SSID = "Igloo";
+const char* PASSWORD = "1glooVision";
 
 // ===== API Konfiguration =====
 // WICHTIG: /occupancy/current ist der korrekte Endpoint (nicht /occupancy)

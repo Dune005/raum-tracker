@@ -4,78 +4,57 @@
 #include <driver/i2s.h>
 #include <math.h>
 #include <ArduinoOTA.h>
-#include <time.h>  // Für ISO 8601 Timestamps
-#include <time.h>  // Für ISO 8601 Timestamps
+#include <time.h>
+#include "connectWiFi_hochschule.h"
 
-
-// ==== WLAN Konfiguration ====
-const char* ssid     = "HLY-77900";
-const char* password = "0jgp-42ej-ah8y-hnwz";
-
-// Live-Dashboard (Flat-File)
 const char* serverURL = "https://corner.klaus-klebband.ch/update_count.php";
-
-// API-Endpoints (Datenbank-Speicherung)
 const char* apiSensorEndpoint = "https://corner.klaus-klebband.ch/api/v1/sensor/reading";
 const char* apiHeartbeatEndpoint = "https://corner.klaus-klebband.ch/api/v1/device/heartbeat";
 
-// API-Credentials
 const char* apiKey = "test_key_audio_789012";
 const char* deviceID = "770e8400-e29b-41d4-a716-446655440002";
-const char* sensorID = "550e8400-e29b-41d4-a716-446655440003";  // Mikrofon
+const char* sensorID = "550e8400-e29b-41d4-a716-446655440003";
 
-
-// ==== I2S Mikrofon Konfiguration (ESP32-C6) ====
-#define I2S_WS   12   // GPIO12 - Word Select/LRCLK
-#define I2S_SD   11   // GPIO11 - Serial Data/DOUT  
-#define I2S_SCK  10   // GPIO10 - Serial Clock/BCLK
+// ===== I2S INMP441 KONFIGURATION =====
+#define I2S_WS   12   // GPIO12 - Left/Right Clock (LRCLK)
+#define I2S_SD   11   // GPIO11 - Serial Data (DOUT)
+#define I2S_SCK  10   // GPIO10 - Bit Clock (BCLK)
 #define I2S_PORT I2S_NUM_0
 
-
-// ==== Audio Parameter ====
 #define SAMPLE_RATE 16000
-#define SAMPLE_BUFFER_SIZE 1024
+#define SAMPLE_BUFFER_SIZE 512  // ← INMP441 braucht kleinere Buffer
 #define SAMPLES_PER_MEASUREMENT 512
 
-
-// ==== Timing ====
 unsigned long lastSoundUpdate = 0;
 unsigned long lastUploadTime = 0;
 unsigned long lastApiUploadTime = 0;
 unsigned long lastHeartbeatTime = 0;
-const int soundUpdateInterval = 1000;  // ms - Messung
-const int uploadInterval = 3000;       // ms - Live-Dashboard
-const int apiUploadInterval = 60000;   // ms - API alle 60 Sekunden (nicht zu oft!)
-const int heartbeatInterval = 300000;  // ms - Heartbeat alle 5 Minuten
+const int soundUpdateInterval = 1000;
+const int uploadInterval = 3000;
+const int apiUploadInterval = 60000;
+const int heartbeatInterval = 300000;
 
-
-// ==== Sound-Variablen ====
-float currentSoundLevel = 30.0;  // dB (intern für Berechnung) - angepasst
+float currentSoundLevel = 30.0;
 int soundPercentage = 0;
 
-
-// ==== VERBESSERTE KALIBRIERUNG ====
-const float QUIET_ROOM_DB = 30.0;  // Niedrigerer Startwert
-const float LOUD_ROOM_DB = 90.0;   // Höherer Maximalwert
-const float GAIN_FACTOR = 3.5;     // Verstärkungsfaktor für mehr Empfindlichkeit
+// ===== INMP441 KALIBRIERUNG =====
+const float QUIET_ROOM_DB = 30.0;
+const float LOUD_ROOM_DB = 90.0;
+const float GAIN_FACTOR = 3.5;
 bool isCalibrated = false;
 float baselineNoise = 0.0;
 float lastRawValue = 0;
 
-
-// ==== SETUP ====
 void setup() {
   Serial.begin(115200);
   delay(100);
   
-  Serial.println("ESP32-C6 Sound Monitor Board - Verbesserte Empfindlichkeit");
-  Serial.println("==========================================================");
+  Serial.println("\n=== ESP32-C6 Sound Monitor (INMP441 Mikrofon) ===\n");
   
   connectWiFi();
   
-  // NTP Zeit synchronisieren (für ISO 8601 Timestamps)
-  configTime(3600, 3600, "pool.ntp.org", "time.nist.gov");  // GMT+1 (Schweiz)
-  Serial.println("Warte auf NTP-Zeitsynchronisation...");
+  configTime(3600, 3600, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Warte auf NTP...");
   time_t now = time(nullptr);
   int attempts = 0;
   while (now < 8 * 3600 * 24 && attempts < 30) {
@@ -84,21 +63,15 @@ void setup() {
     now = time(nullptr);
     attempts++;
   }
-  Serial.println("");
-  if (now > 8 * 3600 * 24) {
-    Serial.println("✅ NTP Zeit synchronisiert");
-  } else {
-    Serial.println("⚠️ NTP Timeout - Timestamps könnten ungenau sein");
-  }
+  Serial.println(now > 8 * 3600 * 24 ? "\n✅ Zeit OK\n" : "\n⚠️ Zeit Fehler\n");
   
   if (setupI2S()) {
-    Serial.println("I2S Mikrofon erfolgreich initialisiert");
+    Serial.println("✅ I2S INMP441 Mikrofon initialisiert\n");
   } else {
-    Serial.println("FEHLER: I2S Mikrofon konnte nicht initialisiert werden!");
+    Serial.println("❌ FEHLER: INMP441 Mikrofon konnte nicht initialisiert werden!");
     while(1) delay(1000);
   }
   
-  // OTA-Funktionalität aktivieren
   if (WiFi.status() == WL_CONNECTED) {
     ArduinoOTA.setHostname("mikrofon_sound");
     ArduinoOTA.setPassword("mikro2025");
@@ -112,10 +85,6 @@ void setup() {
       Serial.println("\n✅ OTA Update abgeschlossen");
     });
     
-    ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-      Serial.printf("Fortschritt: %u%%\r", (progress / (total / 100)));
-    });
-    
     ArduinoOTA.onError([](ota_error_t error) {
       Serial.printf("❌ OTA Error[%u]: ", error);
       if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
@@ -126,21 +95,18 @@ void setup() {
     });
     
     ArduinoOTA.begin();
-    Serial.println("📡 OTA bereit - Hostname: mikrofon_sound");
+    Serial.println("📡 OTA bereit\n");
   }
   
-  Serial.println("Kalibriere Mikrofon... (5 Sekunden ruhig bleiben)");
+  Serial.println("Kalibriere INMP441... (5 Sekunden ruhig bleiben)");
   delay(2000);
   calibrateMicrophone();
   
   Serial.println("\n✅ Sound Monitor bereit!");
-  Serial.println("Sendet: sound_level als PROZENT (0-100)");
-  Serial.printf("Gain-Faktor: %.1f | Bereich: %.0f-%.0f dB\n", 
+  Serial.printf("Gain-Faktor: %.1f | Bereich: %.0f-%.0f dB\n\n", 
                 GAIN_FACTOR, QUIET_ROOM_DB, LOUD_ROOM_DB);
 }
 
-
-// ==== HAUPTSCHLEIFE ====
 void loop() {
   if (WiFi.status() == WL_CONNECTED) {
     ArduinoOTA.handle();
@@ -156,7 +122,7 @@ void loop() {
     currentSoundLevel = readSoundLevel();
     soundPercentage = soundLevelToPercentage(currentSoundLevel);
     
-    Serial.print("Sound: ");
+    Serial.print("🔊 Sound: ");
     Serial.print(currentSoundLevel, 1);
     Serial.print(" dB → ");
     Serial.print(soundPercentage);
@@ -167,19 +133,16 @@ void loop() {
     lastSoundUpdate = now;
   }
   
-  // Live-Dashboard Update (häufig)
   if (now - lastUploadTime > uploadInterval) {
     sendSoundDataToServer();
     lastUploadTime = now;
   }
 
-  // API-Update (nur alle 60 Sekunden - nicht zu oft!)
   if (now - lastApiUploadTime > apiUploadInterval) {
     sendSensorReadingToAPI();
     lastApiUploadTime = now;
   }
 
-  // Heartbeat alle 5 Minuten
   if (now - lastHeartbeatTime > heartbeatInterval) {
     sendHeartbeat();
     lastHeartbeatTime = now;
@@ -188,19 +151,14 @@ void loop() {
   delay(100);
 }
 
-
-// ==== LIVE-DASHBOARD UPDATE (Flat-File) ====
 void sendSoundDataToServer() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("❌ Keine WiFi - Sound-Upload übersprungen");
+    Serial.println("❌ Dashboard: Keine WiFi");
     return;
   }
 
   WiFiClientSecure *client = new WiFiClientSecure;
-  if (!client) {
-    Serial.println("❌ Konnte WiFiClientSecure nicht erstellen");
-    return;
-  }
+  if (!client) return;
   
   client->setInsecure();
 
@@ -211,7 +169,7 @@ void sendSoundDataToServer() {
   
   String data = "sound_level=" + String(soundPercentage);
   
-  Serial.print("📤 Live-Dashboard: " + data + " ... ");
+  Serial.print("📤 Dashboard: " + data + " ... ");
   
   int httpResponseCode = http.POST(data);
   
@@ -225,12 +183,11 @@ void sendSoundDataToServer() {
   delete client;
 }
 
-// Hilfsfunktion: ISO 8601 Timestamp generieren
 String getISO8601Timestamp() {
   time_t now = time(nullptr);
   struct tm timeinfo;
   if (!gmtime_r(&now, &timeinfo)) {
-    return "";  // Fehler
+    return "";
   }
   
   char buffer[30];
@@ -238,10 +195,9 @@ String getISO8601Timestamp() {
   return String(buffer);
 }
 
-// ==== NEU: SENSOR-READING AN API SENDEN (alle 60s) ====
 void sendSensorReadingToAPI() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("❌ Keine WiFi - API-Reading übersprungen");
+    Serial.println("❌ API: Keine WiFi");
     return;
   }
 
@@ -256,44 +212,37 @@ void sendSensorReadingToAPI() {
   http.addHeader("X-API-Key", apiKey);
   http.setTimeout(5000);
   
-  // ISO 8601 Timestamp generieren
   String timestamp = getISO8601Timestamp();
   if (timestamp == "") {
-    Serial.println("❌ Timestamp-Fehler - Reading übersprungen");
+    Serial.println("❌ Timestamp-Fehler");
     delete client;
     return;
   }
   
-  // JSON-Payload erstellen
   String jsonPayload = "{";
   jsonPayload += "\"sensor_id\":\"" + String(sensorID) + "\",";
   jsonPayload += "\"timestamp\":\"" + timestamp + "\",";
-  jsonPayload += "\"value_num\":" + String(currentSoundLevel, 1) + ",";  // dB-Wert
+  jsonPayload += "\"value_num\":" + String(currentSoundLevel, 1) + ",";
   jsonPayload += "\"quality\":\"OK\"";
   jsonPayload += "}";
   
-  Serial.print("💾 API Sensor-Reading: " + String(currentSoundLevel, 1) + " dB ... ");
+  Serial.print("💾 API: " + String(currentSoundLevel, 1) + " dB ... ");
   
   int httpResponseCode = http.POST(jsonPayload);
   
   if (httpResponseCode > 0) {
-    Serial.println("✅ DB gespeichert (" + String(httpResponseCode) + ")");
-    if (httpResponseCode == 201 || httpResponseCode == 200) {
-      String response = http.getString();
-      Serial.println("📥 API: " + response);
-    }
+    Serial.println("✅ (" + String(httpResponseCode) + ")");
   } else {
-    Serial.println("❌ DB-Fehler (" + String(httpResponseCode) + ")");
+    Serial.println("❌ (" + String(httpResponseCode) + ")");
   }
   
   http.end();
   delete client;
 }
 
-// ==== NEU: HEARTBEAT AN API SENDEN ====
 void sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("❌ Keine WiFi - Heartbeat übersprungen");
+    Serial.println("❌ Heartbeat: Keine WiFi");
     return;
   }
 
@@ -308,15 +257,13 @@ void sendHeartbeat() {
   http.addHeader("X-API-Key", apiKey);
   http.setTimeout(5000);
   
-  // ISO 8601 Timestamp generieren
   String timestamp = getISO8601Timestamp();
   if (timestamp == "") {
-    Serial.println("❌ Timestamp-Fehler - Heartbeat übersprungen");
+    Serial.println("❌ Timestamp-Fehler");
     delete client;
     return;
   }
   
-  // JSON-Payload erstellen
   String jsonPayload = "{";
   jsonPayload += "\"device_id\":\"" + String(deviceID) + "\",";
   jsonPayload += "\"timestamp\":\"" + timestamp + "\",";
@@ -341,17 +288,16 @@ void sendHeartbeat() {
   delete client;
 }
 
-
-// ==== I2S SETUP ====
+// ===== I2S SETUP FÜR INMP441 =====
 bool setupI2S() {
   const i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
     .sample_rate = SAMPLE_RATE,
     .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
-    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-    .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S),
+    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,  // ← INMP441 ist mono (links)
+    .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 8,
+    .dma_buf_count = 4,           // ← Weniger Puffer für INMP441
     .dma_buf_len = SAMPLE_BUFFER_SIZE,
     .use_apll = false,
     .tx_desc_auto_clear = false,
@@ -367,22 +313,22 @@ bool setupI2S() {
 
   esp_err_t err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
   if (err != ESP_OK) {
-    Serial.printf("I2S driver install Fehler: %d\n", err);
+    Serial.printf("❌ I2S install Fehler: %d\n", err);
     return false;
   }
 
   err = i2s_set_pin(I2S_PORT, &pin_config);
   if (err != ESP_OK) {
-    Serial.printf("I2S pin config Fehler: %d\n", err);
+    Serial.printf("❌ I2S pin Fehler: %d\n", err);
     return false;
   }
 
   i2s_start(I2S_PORT);
   
-  // Stabilisierung
+  // ← INMP441 braucht weniger Aufwärmzeit
   int32_t dummy_samples[128];
   size_t dummy_bytes;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 5; i++) {
     i2s_read(I2S_PORT, dummy_samples, sizeof(dummy_samples), &dummy_bytes, pdMS_TO_TICKS(100));
     delay(50);
   }
@@ -390,10 +336,8 @@ bool setupI2S() {
   return true;
 }
 
-
-// ==== VERBESSERTE KALIBRIERUNG ====
 void calibrateMicrophone() {
-  Serial.println("Kalibriere Ruhepegel...");
+  Serial.println("Kalibriere...");
   
   float total = 0;
   float maxVal = 0;
@@ -402,7 +346,7 @@ void calibrateMicrophone() {
   
   for (int i = 0; i < 50; i++) {
     float rawLevel = getRawAudioLevel();
-    if (rawLevel > 100 && rawLevel < 500000) {  // Breiterer Akzeptanzbereich
+    if (rawLevel > 100 && rawLevel < 500000) {
       total += rawLevel;
       maxVal = max(maxVal, rawLevel);
       minVal = min(minVal, rawLevel);
@@ -415,23 +359,22 @@ void calibrateMicrophone() {
   if (validSamples > 10) {
     baselineNoise = total / validSamples;
     isCalibrated = true;
-    Serial.println("\n✅ Kalibrierung erfolgreich!");
+    Serial.println("\n✅ Kalibrierung OK");
     Serial.printf("   Baseline: %.0f | Min: %.0f | Max: %.0f\n", 
                   baselineNoise, minVal, maxVal);
   } else {
-    baselineNoise = 30000;  // Niedrigerer Standardwert
-    Serial.println("\n⚠️ Kalibrierung fehlgeschlagen - verwende Standardwerte");
+    baselineNoise = 30000;
+    Serial.println("\n⚠️ Kalibrierung fehlgeschlagen - Standardwerte");
   }
 }
 
-
-// ==== VERBESSERTE RAW AUDIO LEVEL ====
 float getRawAudioLevel() {
   int32_t samples[SAMPLES_PER_MEASUREMENT];
   size_t bytes_read = 0;
   
+  // ← INMP441: Kürzere Timeout für schnellere Messung
   esp_err_t result = i2s_read(I2S_PORT, samples, sizeof(samples), 
-                              &bytes_read, pdMS_TO_TICKS(200));
+                              &bytes_read, pdMS_TO_TICKS(100));
   
   if (result != ESP_OK || bytes_read == 0) {
     return lastRawValue;
@@ -442,11 +385,11 @@ float getRawAudioLevel() {
   int validSamples = 0;
   
   for (int i = 0; i < sample_count; i++) {
-    int32_t sample32 = samples[i];
-    int16_t sample16 = sample32 >> 16;
+    // ← INMP441 gibt 32-bit Samples, nehme obere 16 Bit
+    int32_t sample32 = samples[i] >> 14;  // ← Schiebe statt >> 16 für mehr Auflösung
     
-    if (abs(sample16) < 32000) {
-      float sampleFloat = (float)sample16;
+    if (abs(sample32) < 32000) {
+      float sampleFloat = (float)sample32;
       sumSquares += sampleFloat * sampleFloat;
       validSamples++;
     }
@@ -460,37 +403,28 @@ float getRawAudioLevel() {
   return lastRawValue;
 }
 
-
-// ==== VERBESSERTE SOUND LEVEL BERECHNUNG ====
 float readSoundLevel() {
   if (!isCalibrated) {
     return QUIET_ROOM_DB;
   }
   
   float rawLevel = getRawAudioLevel();
-  
-  // Verstärkung anwenden für mehr Empfindlichkeit
   rawLevel = rawLevel * GAIN_FACTOR;
   
   float ratio = rawLevel / (baselineNoise * GAIN_FACTOR);
   
-  // Erweiterte dB-Berechnung
   float db = QUIET_ROOM_DB;
   if (ratio > 1.0) {
     db = QUIET_ROOM_DB + (20.0 * log10(ratio));
   }
   
-  // Breitere Grenzen
   if (db < QUIET_ROOM_DB) db = QUIET_ROOM_DB;
   if (db > LOUD_ROOM_DB) db = LOUD_ROOM_DB;
   
-  // Weniger aggressive Glättung für schnellere Reaktion
   float smoothed = (currentSoundLevel * 0.6) + (db * 0.4);
   return smoothed;
 }
 
-
-// ==== PROZENT KONVERTIERUNG ====
 int soundLevelToPercentage(float dbLevel) {
   int percentage = (int)((dbLevel - QUIET_ROOM_DB) / (LOUD_ROOM_DB - QUIET_ROOM_DB) * 100.0);
   
@@ -498,26 +432,4 @@ int soundLevelToPercentage(float dbLevel) {
   if (percentage > 100) percentage = 100;
   
   return percentage;
-}
-
-
-// ==== WIFI VERBINDUNG ====
-void connectWiFi() {
-  Serial.println("Verbinde mit WiFi...");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi verbunden!");
-    Serial.println("IP-Adresse: " + WiFi.localIP().toString());
-  } else {
-    Serial.println("\nWiFi-Verbindung fehlgeschlagen!");
-  }
 }
