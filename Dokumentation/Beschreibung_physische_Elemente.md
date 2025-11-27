@@ -11,9 +11,10 @@
 │                        RAUM (Aufenthaltsraum IM5)            │
 ├─────────────────────────────────────────────────────────────┤
 │                                                               │
-│  🚪 Eingang                              🖥️ Foyer             │
+│  🪜 Treppenhaus                           🖥️ Foyer             │
 │  ├─ Lichtschranke A (links)             └─ E-Ink Display    │
-│  └─ Lichtschranke B (rechts)                (zeigt Auslastung)
+│  ├─ Lichtschranke B (rechts)                (zeigt Auslastung)
+│  └─ Lichtschranke Middle (Mitte)                             │
 │                                                               │
 │  🎤 Raummitte                                                │
 │  └─ Mikrofon (misst Lautstärke)                             │
@@ -29,24 +30,28 @@
 
 ## 🔧 **Hardware-Komponenten**
 
-### **1️⃣ Lichtschranken-Gate (Eingang)**
+### **1️⃣ Lichtschranken-Gate (Treppenhaus)**
 
-**Was:** Zwei ToF-Sensoren (VL53L0X) nebeneinander
-- **Sensor A** (GPIO2 / Adresse 0x30) - Eingang links
-- **Sensor B** (GPIO3 / Adresse 0x29) - Eingang rechts
+**Was:** Drei ToF-Sensoren (2x VL53L0X + 1x VL6180X) für präzise Richtungserkennung
+- **Sensor A** (GPIO2 / Adresse 0x30) - links (Eingang)
+- **Sensor B** (GPIO3 / Adresse 0x31) - rechts (Ausgang)
+- **Sensor Middle** (GPIO4 / Adresse 0x29) - Mitte (Validierung)
 
 **Wie es funktioniert:**
 ```
-Person geht REIN:
-  Sensor A wird unterbrochen → dann Sensor B
-  → Reihenfolge: A vor B = REIN (+1 Person)
+Person geht REIN (IN):
+  Sensor A → Sensor Middle → Sensor B
+  → Sequenz: A vor Middle vor B = EINTRITT (+1 Person)
 
-Person geht RAUS:
-  Sensor B wird unterbrochen → dann Sensor A
-  → Reihenfolge: B vor A = RAUS (-1 Person)
+Person geht RAUS (OUT):
+  Sensor B → Sensor Middle → Sensor A
+  → Sequenz: B vor Middle vor A = AUSTRITT (-1 Person)
+
+Validierung: Middle-Sensor verhindert Fehlzählungen durch direkte Blockier-Erkennung.
+Timeout: 1 Sekunde für Sequenz-Abschluss.
 ```
 
-**Wo sitzt das:** ESP32-C6 Mikrocontroller (oben am Gate)
+**Wo sitzt das:** ESP32-C6 Mikrocontroller (im Treppenhaus am Gate)
 
 **Was es speichert:** 
 - Flow-Events (IN/OUT) in Datenbank
@@ -114,20 +119,26 @@ Person geht RAUS:
 
 ```
 1. LICHTSCHRANKE (Gate-ESP32)
-   ├─ Sensor A erkennt Bewegung (von 500mm → 350mm)
+   ├─ Sensor A erkennt Blockierung (<950mm)
    ├─ State Machine: IDLE → POSSIBLE_A
-   ├─ Wartet auf Sensor B
-   └─ (max. 600ms)
+   ├─ Wartet auf Sensor Middle
+   └─ (max. 1 Sekunde)
 
 2. LICHTSCHRANKE (weiterhin)
-   ├─ Sensor B folgt schnell nach
-   ├─ State Machine: POSSIBLE_A → EINTRITT erkannt
+   ├─ Sensor Middle bestätigt Blockierung (<950mm)
+   ├─ State Machine: POSSIBLE_A → MIDDLE_CONFIRM
+   ├─ Wartet auf Sensor B
+   └─ (max. 1 Sekunde)
+
+3. LICHTSCHRANKE (abschluss)
+   ├─ Sensor B erkennt Blockierung (<950mm)
+   ├─ State Machine: MIDDLE_CONFIRM → EINTRITT erkannt
    ├─ count++ (z.B. 15 → 16)
    └─ 📤 Sendet sofort:
       ├─ POST /update_count.php (Zähler live)
       └─ POST /api/v1/gate/flow (Datenbank speichern)
 
-3. SERVER (alle 60 Sekunden via Cron)
+4. SERVER (alle 60 Sekunden via Cron)
    ├─ Cron lädt: generate_occupancy_snapshot.php
    ├─ Berechnet neuen Snapshot:
    │  ├─ people_estimate = aktuelle Flow-Bilanz
@@ -135,13 +146,13 @@ Person geht RAUS:
    │  └─ noise_db = letzter Mikrofon-Wert
    └─ 💾 Speichert in occupancy_snapshot Tabelle
 
-4. DISPLAY (alle 60 Sekunden)
+5. DISPLAY (alle 60 Sekunden)
    ├─ GET /api/v1/occupancy/current?space_id=...
    ├─ Erhält Snapshot-Daten
    ├─ Rendert neue Anzeige (in Quadranten)
    └─ 📊 Zeigt aktualisierte Werte
 
-5. DATENBANK
+6. DATENBANK
    └─ flow_event + occupancy_snapshot gespeichert ✅
 ```
 
@@ -167,8 +178,11 @@ Person geht RAUS:
 VL53L0X Sensor A (Adresse 0x30):
   SCL → GPIO6, SDA → GPIO7, XSHUT → GPIO2
 
-VL53L0X Sensor B (Adresse 0x29):
+VL53L0X Sensor B (Adresse 0x31):
   SCL → GPIO6, SDA → GPIO7, XSHUT → GPIO3
+
+VL6180X Sensor Middle (Adresse 0x29):
+  SCL → GPIO6, SDA → GPIO7, XSHUT → GPIO4
 ```
 
 ### **Audio-ESP32-C6 (Mikrofon)**
@@ -252,4 +266,4 @@ GxEPD2 Display (SPI):
 
 ---
 
-**Stand:** 16. November 2025
+**Stand:** 27. November 2025

@@ -269,8 +269,8 @@
                 <div class="col-lg-4">
                     <div class="glass-card p-3">
                         <div class="stat-label mb-2">Controller Status</div>
-                        <div class="row g-2">
-                            <div class="col-6">
+                        <div class="row g-2 g-md-3">
+                            <div class="col-12 col-md-4">
                                 <div class="text-center p-2" style="background: rgba(0,0,0,0.02); border-radius: 8px;">
                                     <div class="small text-secondary mb-1">Gate Controller</div>
                                     <div id="controller-gate-status" class="badge status-online">
@@ -279,13 +279,22 @@
                                     <div class="small text-secondary mt-1" id="controller-gate-signal">--</div>
                                 </div>
                             </div>
-                            <div class="col-6">
+                            <div class="col-12 col-md-4">
                                 <div class="text-center p-2" style="background: rgba(0,0,0,0.02); border-radius: 8px;">
                                     <div class="small text-secondary mb-1">Audio Controller</div>
                                     <div id="controller-audio-status" class="badge status-online">
                                         <span class="live-indicator me-1"></span>Verbinde...
                                     </div>
                                     <div class="small text-secondary mt-1" id="controller-audio-signal">--</div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <div class="text-center p-2" style="background: rgba(0,0,0,0.02); border-radius: 8px;">
+                                    <div class="small text-secondary mb-1">Raspi Cron</div>
+                                    <div id="controller-raspi-status" class="badge status-online">
+                                        <span class="live-indicator me-1"></span>Verbinde...
+                                    </div>
+                                    <div class="small text-secondary mt-1" id="controller-raspi-signal">--</div>
                                 </div>
                             </div>
                         </div>
@@ -504,12 +513,16 @@
                     document.getElementById('arduino-count').textContent = '--';
                     const statusGate = document.getElementById('controller-gate-status');
                     const statusAudio = document.getElementById('controller-audio-status');
+                    const statusRaspi = document.getElementById('controller-raspi-status');
                     statusGate.className = 'badge status-offline';
                     statusGate.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Offline';
                     statusAudio.className = 'badge status-offline';
                     statusAudio.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Offline';
+                    statusRaspi.className = 'badge status-offline';
+                    statusRaspi.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Offline';
                     document.getElementById('controller-gate-signal').textContent = '--';
                     document.getElementById('controller-audio-signal').textContent = '--';
+                    document.getElementById('controller-raspi-signal').textContent = '--';
                     return;
                 }
 
@@ -544,7 +557,7 @@
                 }
 
                 // Gate Controller Status (separate Timestamps!)
-                const secondsGate = data.seconds_since_count_update || 999999;
+                const secondsGate = data.seconds_since_count_update ?? 999999;
                 let signalTextGate = '';
                 if (secondsGate < 60) {
                     signalTextGate = `vor ${secondsGate}s`;
@@ -556,10 +569,10 @@
 
                 const statusGate = document.getElementById('controller-gate-status');
                 document.getElementById('controller-gate-signal').textContent = signalTextGate;
-                if (secondsGate < 10) {
+                if (secondsGate < 30) {
                     statusGate.className = 'badge status-online';
                     statusGate.innerHTML = '<span class="live-indicator me-1"></span>Online';
-                } else if (secondsGate < 30) {
+                } else if (secondsGate < 90) {
                     statusGate.className = 'badge status-warning';
                     statusGate.innerHTML = '<i class="bi bi-exclamation-circle-fill me-1"></i>Delay';
                 } else {
@@ -568,7 +581,7 @@
                 }
 
                 // Audio Controller Status (separate Timestamps!)
-                const secondsAudio = data.seconds_since_sound_update || 999999;
+                const secondsAudio = data.seconds_since_sound_update ?? 999999;
                 let signalTextAudio = '';
                 if (secondsAudio < 60) {
                     signalTextAudio = `vor ${secondsAudio}s`;
@@ -580,15 +593,39 @@
 
                 const statusAudio = document.getElementById('controller-audio-status');
                 document.getElementById('controller-audio-signal').textContent = signalTextAudio;
-                if (secondsAudio < 70) {
+                if (secondsAudio < 60) {
                     statusAudio.className = 'badge status-online';
                     statusAudio.innerHTML = '<span class="live-indicator me-1"></span>Online';
-                } else if (secondsAudio < 90) {
+                } else if (secondsAudio < 120) {
                     statusAudio.className = 'badge status-warning';
                     statusAudio.innerHTML = '<i class="bi bi-exclamation-circle-fill me-1"></i>Delay';
                 } else {
                     statusAudio.className = 'badge status-offline';
                     statusAudio.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Offline';
+                }
+
+                // Raspberry Pi Cron Status
+                const secondsRaspi = data.seconds_since_raspi_update ?? 999999;
+                let signalTextRaspi = '';
+                if (secondsRaspi < 60) {
+                    signalTextRaspi = `vor ${secondsRaspi}s`;
+                } else if (secondsRaspi < 3600) {
+                    signalTextRaspi = `vor ${Math.floor(secondsRaspi / 60)}min`;
+                } else {
+                    signalTextRaspi = `vor ${Math.floor(secondsRaspi / 3600)}h`;
+                }
+
+                const statusRaspi = document.getElementById('controller-raspi-status');
+                document.getElementById('controller-raspi-signal').textContent = signalTextRaspi;
+                if (secondsRaspi < 360) {
+                    statusRaspi.className = 'badge status-online';
+                    statusRaspi.innerHTML = '<span class="live-indicator me-1"></span>Online';
+                } else if (secondsRaspi < 900) {
+                    statusRaspi.className = 'badge status-warning';
+                    statusRaspi.innerHTML = '<i class="bi bi-exclamation-circle-fill me-1"></i>Delay';
+                } else {
+                    statusRaspi.className = 'badge status-offline';
+                    statusRaspi.innerHTML = '<i class="bi bi-x-circle-fill me-1"></i>Offline';
                 }
 
             } catch (error) {

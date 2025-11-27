@@ -16,7 +16,9 @@ Dieses Projekt erfasst die Auslastung des Aufenthaltsraums IM5 in Echtzeit mit L
 
 ## 📚 Dokumentation
 
-- folgt
+- [Beschreibung der physischen Elemente](Dokumentation/Beschreibung_physische_Elemente.md) - Hardware-Komponenten und Datenfluss
+- [Beschreibung der Datenbank](Dokumentation/Beschreibung_Datenbank.md) - Datenmodell und Tabellenstruktur
+- [Bilder](Dokumentation/Bilder/) - Zusätzliche Visualisierungen und Diagramme
 
 
 ## 📊 Features
@@ -30,5 +32,4 @@ Dieses Projekt erfasst die Auslastung des Aufenthaltsraums IM5 in Echtzeit mit L
 
 ---
 
-**Stand:** 22. Oktober 2025 | **Version:** 1.0
-
+**Stand:** 27. November 2025 | **Version:** 2.0

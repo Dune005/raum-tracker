@@ -45,6 +45,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $updated = true;
     }
     
+    // ===== BOARD 3: Raspberry Pi (Cron / Heartbeat) =====
+    if (isset($_POST['raspi_ping'])) {
+        $data['last_raspi_update'] = time();
+        if (isset($_POST['raspi_status'])) {
+            $data['raspi_status'] = $_POST['raspi_status'];
+        }
+        if (isset($_POST['device_id'])) {
+            $data['raspi_device_id'] = $_POST['device_id'];
+        }
+        $data['timestamp'] = $timestamp;
+        $updated = true;
+    }
+    
     // Globales last_update setzen
     if ($updated) {
         $data['last_update'] = time();
@@ -89,6 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // Separate Timestamps für Count und Sound
         $data['seconds_since_count_update'] = isset($data['last_count_update']) ? time() - $data['last_count_update'] : 999999;
         $data['seconds_since_sound_update'] = isset($data['last_sound_update']) ? time() - $data['last_sound_update'] : 999999;
+        $data['seconds_since_raspi_update'] = isset($data['last_raspi_update']) ? time() - $data['last_raspi_update'] : 999999;
         
         $data['has_data'] = true;
         
@@ -117,6 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             'seconds_since_update' => 999999,
             'seconds_since_count_update' => 999999,
             'seconds_since_sound_update' => 999999,
+            'seconds_since_raspi_update' => 999999,
             'has_data' => false
         ]);
     }
