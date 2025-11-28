@@ -38,13 +38,13 @@ Unser Minimum Viable Product fokussiert sich auf die Erfassung und Visualisierun
 ### **Phase 1: Konzeption und Planung**
 
 * Detaillierte Anforderungsanalyse und Definition der Sensoren  
-* Auswahl und Beschaffung der Hardware (Lichtschranken, PIR-Sensor, Inkplate 2, Mikrocontroller)  
+* Auswahl und Beschaffung der Hardware (Lichtschranken, Mikrofon, Inkplate 2, Mikrocontroller)  
 * Erstellung eines Datenmodells und Festlegung der Kommunikationsprotokolle
 
 ### **Phase 2: Prototyping**
 
 * Aufbau und Test der Lichtschranken-Konfiguration (zwei Sensoren zur Richtungserkennung)  
-* Integration des PIR-Sensors und Test der Bewegungserkennung  
+* Iterationen zur Optimierung der Sensorplatzierung und Erkennung  
 * Entwicklung der Firmware für Datensammlung und \-übertragung  
 * Erste Tests zur Datenqualität und Zuverlässigkeit
 
@@ -109,7 +109,7 @@ Datenbank. So stellen wir uns unser Backend vor (ERM). Bitte die API-Endpoints e
   Mikrocontroller mit zwei Distanzsensoren zur Überwachung des Personenflusses (Bewegen sich Personen in den Raum hinein oder gehen sie raus.
 
 - **Mikrocontroller 2**  
-  Hier bringen wir ein Mikrofon an, das die Lautstärke im Raum misst, damit wir anhand der Dezibel-Werte definieren können, ob viele Leute im Raum sind oder nicht.
+  Hier bringen wir ein Mikrofon an, das die Lautstärke im Raum misst. Die Dezibel-Werte werden zur Analyse gespeichert und im Dashboard visualisiert, beeinflussen aber nicht die eigentliche Auslastungsberechnung.
 
 - **Ink-Display (controller board und separates Display)**  
 - Board: Waveshare ESP32 Universal Raw e-Paper Driver Board  

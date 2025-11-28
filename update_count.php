@@ -45,7 +45,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $updated = true;
     }
     
-    // ===== BOARD 3: Raspberry Pi (Cron / Heartbeat) =====
+    // ===== BOARD 3: Display Heartbeat =====
+    if (isset($_POST['display_ping'])) {
+        $data['last_display_update'] = time();
+        if (isset($_POST['device_id'])) {
+            $data['display_device_id'] = $_POST['device_id'];
+        }
+        if (!isset($data['timestamp'])) {
+            $data['timestamp'] = $timestamp;
+        }
+        $updated = true;
+    }
+    
+    // ===== BOARD 4: Raspberry Pi (Cron / Heartbeat) =====
     if (isset($_POST['raspi_ping'])) {
         $data['last_raspi_update'] = time();
         if (isset($_POST['raspi_status'])) {
@@ -103,6 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         $data['seconds_since_count_update'] = isset($data['last_count_update']) ? time() - $data['last_count_update'] : 999999;
         $data['seconds_since_sound_update'] = isset($data['last_sound_update']) ? time() - $data['last_sound_update'] : 999999;
         $data['seconds_since_raspi_update'] = isset($data['last_raspi_update']) ? time() - $data['last_raspi_update'] : 999999;
+        $data['seconds_since_display_update'] = isset($data['last_display_update']) ? time() - $data['last_display_update'] : 999999;
         
         $data['has_data'] = true;
         
@@ -132,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             'seconds_since_count_update' => 999999,
             'seconds_since_sound_update' => 999999,
             'seconds_since_raspi_update' => 999999,
+            'seconds_since_display_update' => 999999,
             'has_data' => false
         ]);
     }

@@ -51,8 +51,8 @@ date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 
 // ========== ZEITFENSTER-KONFIGURATION ==========
 // Snapshots nur in diesem Zeitfenster erstellen
-$ACTIVE_START_TIME = '10:00';  // Ab 10:00 Uhr
-$ACTIVE_END_TIME = '17:00';    // Bis 17:00 Uhr (nicht inklusiv)
+$ACTIVE_START_TIME = '12:25';  // Ab 12:25 Uhr
+$ACTIVE_END_TIME = '21:00';    // Bis 19:00 Uhr (nicht inklusiv)
 
 // Aktuelle Zeit prüfen
 $currentTime = date('H:i');
@@ -137,21 +137,22 @@ try {
             logMessage("  → Personen (Fallback Flow-Events): {$peopleEstimate}");
         }
         
-        // 2. Durchschnittliche Lautstärke (letzte 24 Stunden - TEMPORÄR FÜR TESTS)
-        $queryNoise = "SELECT AVG(r.value_num) as avg_noise
+        // 2. Aktuelle Lautstärke (letzte Messung vom Mikrofon)
+        $queryNoise = "SELECT r.value_num AS latest_noise
                        FROM reading r
                        JOIN sensor s ON r.sensor_id = s.id
                        JOIN device d ON s.device_id = d.id
                        WHERE d.space_id = :space_id
                        AND s.type = 'MICROPHONE'
-                       AND r.ts >= DATE_SUB(NOW(), INTERVAL 24 HOUR)";
+                       ORDER BY r.ts DESC
+                       LIMIT 1";
         $stmtNoise = $db->prepare($queryNoise);
         $stmtNoise->bindParam(':space_id', $spaceId);
         $stmtNoise->execute();
         $noiseResult = $stmtNoise->fetch(PDO::FETCH_ASSOC);
-        $noiseDelta = $noiseResult['avg_noise'] ? round($noiseResult['avg_noise'], 1) : null;
+        $noiseDelta = isset($noiseResult['latest_noise']) ? (float)$noiseResult['latest_noise'] : null;
         
-        logMessage("  → Lautstärke (Ø 24h): " . ($noiseDelta ? "{$noiseDelta} dB" : "keine Daten"));
+        logMessage("  → Lautstärke (letzte Messung): " . ($noiseDelta !== null ? "{$noiseDelta} dB" : "keine Daten"));
         
         // 3. Schwellenwerte holen (JSON-Format)
         $queryThresholds = "SELECT noise_levels, motion_levels
@@ -174,32 +175,19 @@ try {
         
         logMessage("  → Schwellenwerte: Personen LOW<{$peopleLevels['low']}, MEDIUM<{$peopleLevels['medium']}, Noise LOW<{$noiseLevels['medium']}dB, HIGH>={$noiseLevels['high']}dB");
         
-        // 5. Level berechnen (Primary: Personenzahl, Secondary: Lautstärke)
+        // 5. Level berechnen (nur basierend auf Personenzahl / Flow)
         $level = 'LOW';
         
-        // Primär: Personenzahl
         if ($peopleEstimate >= $peopleLevels['medium']) {
             $level = 'HIGH';
         } elseif ($peopleEstimate >= $peopleLevels['low']) {
             $level = 'MEDIUM';
-        } else {
-            // Fallback auf Lautstärke wenn wenig Personen
-            if ($noiseDelta !== null) {
-                if ($noiseDelta >= $noiseLevels['high']) {
-                    $level = 'HIGH';  // Sehr laut trotz wenig Personen
-                } elseif ($noiseDelta >= $noiseLevels['medium']) {
-                    $level = 'MEDIUM';  // Mittellaut
-                }
-            }
         }
         
         logMessage("  → Berechnetes Level: {$level}");
         
-        // 6. Methode bestimmen
+        // 6. Methode bestimmen (Auslastung basiert nur auf Flow)
         $method = 'FLOW_ONLY';
-        if ($noiseDelta !== null) {
-            $method = 'FUSION';
-        }
         
         // 7. Snapshot speichern
         $queryInsert = "INSERT INTO occupancy_snapshot 
