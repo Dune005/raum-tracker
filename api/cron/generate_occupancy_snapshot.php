@@ -54,13 +54,13 @@ date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 $ACTIVE_START_TIME = '08:25';  // Ab 12:25 Uhr
 $ACTIVE_END_TIME = '21:00';    // Bis 19:00 Uhr (nicht inklusiv)
 
-/* Aktuelle Zeit prüfen
+// Aktuelle Zeit prüfen
 $currentTime = date('H:i');
 if ($currentTime < $ACTIVE_START_TIME || $currentTime >= $ACTIVE_END_TIME) {
     // Außerhalb des Zeitfensters - nichts tun
     exit(0);
 }
-*/ //===============================================
+// ===============================================
 
 // Logging-Funktion
 function logMessage($message) {
