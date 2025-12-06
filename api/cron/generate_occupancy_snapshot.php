@@ -25,6 +25,7 @@ if (file_exists($envFile)) {
 }
 
 require_once __DIR__ . '/../config/Database.php';
+require_once __DIR__ . '/../includes/DriftCorrector.php';
 
 // ========== SICHERHEIT: TOKEN-AUTHENTIFIZIERUNG ==========
 // Nur Aufrufe mit gültigem Token erlauben (für Raspberry Pi Cron)
@@ -51,8 +52,8 @@ date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 
 // ========== ZEITFENSTER-KONFIGURATION ==========
 // Snapshots nur in diesem Zeitfenster erstellen
-$ACTIVE_START_TIME = '08:25';  // Ab 12:25 Uhr
-$ACTIVE_END_TIME = '21:00';    // Bis 19:00 Uhr (nicht inklusiv)
+$ACTIVE_START_TIME = '11:00';  // Ab 11:00 Uhr
+$ACTIVE_END_TIME = '15:00';    // Bis 15:00 Uhr (nicht inklusiv)
 
 // Aktuelle Zeit prüfen
 $currentTime = date('H:i');
@@ -88,42 +89,86 @@ try {
         
         logMessage("Verarbeite Space: {$spaceName} ({$spaceId})");
         
-        // 1. Live-Personenzahl vom Arduino (update_count.php)
-        $peopleEstimate = 0;
-        $arduinoAvailable = false;
-        $arduinoUrl = 'https://corner.klaus-klebband.ch/update_count.php';
+        // **NEU: Drift-Korrektur initialisieren**
+        $driftCorrector = new DriftCorrector($db);
+        $driftConfig = $driftCorrector->getDriftConfig($spaceId);
         
-        try {
-            // cURL verwenden (statt file_get_contents, da oft auf Servern deaktiviert)
-            if (function_exists('curl_init')) {
-                $ch = curl_init($arduinoUrl);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 5);
-                curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        // 1. Hole Counter-State aus Datenbank
+        $counterState = $driftCorrector->getCounterState($spaceId);
+        $counterRaw = 0;
+        $displayCount = 0;
+        $driftCorrected = false;
+        $scaleApplied = false;
+        
+        if ($counterState) {
+            $counterRaw = (int)$counterState['counter_raw'];
+            $displayCount = (int)$counterState['display_count'];
+            
+            logMessage("  → Counter-State: raw={$counterRaw}, display={$displayCount}");
+            
+            // **Drift-Check durchführen**
+            if ($driftCorrector->shouldCorrectDrift($spaceId, $counterRaw, $driftConfig)) {
+                logMessage("  → ⚠️ Drift erkannt! Korrektur wird angewendet...");
+                $driftCorrector->applyDriftCorrection($spaceId);
+                $counterRaw = 0;
+                $displayCount = 0;
+                $driftCorrected = true;
+            } else {
+                // Keine Drift-Korrektur notwendig, aber Skalierung prüfen
+                $newDisplayCount = $driftCorrector->computeDisplayCount($counterRaw, $driftConfig);
+                if ($newDisplayCount != $counterRaw) {
+                    $scaleApplied = true;
+                    logMessage("  → Skalierung angewendet: {$counterRaw} → {$newDisplayCount}");
+                }
+                $displayCount = $newDisplayCount;
                 
-                $arduinoResponse = curl_exec($ch);
-                $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $curlError = curl_error($ch);
-                curl_close($ch);
-                
-                if ($arduinoResponse && $httpCode == 200) {
-                    $arduinoData = json_decode($arduinoResponse, true);
-                    if ($arduinoData && isset($arduinoData['count']) && $arduinoData['has_data']) {
-                        $peopleEstimate = max(0, (int)$arduinoData['count']);
-                        $arduinoAvailable = true;
-                        logMessage("  → Personen (Arduino Live): {$peopleEstimate}");
+                // Counter-State aktualisieren
+                $driftCorrector->updateCounterState($spaceId, $counterRaw, $displayCount);
+            }
+        } else {
+            logMessage("  → Kein Counter-State vorhanden, verwende Fallback");
+        }
+        
+        // peopleEstimate ist jetzt display_count (korrigierter Wert)
+        $peopleEstimate = $displayCount;
+        
+        // 2. Fallback auf Arduino Live-Daten (nur wenn counter_state fehlt)
+        $arduinoAvailable = false;
+        if (!$counterState) {
+            $arduinoUrl = 'https://corner.klaus-klebband.ch/update_count.php';
+            
+            try {
+                // cURL verwenden (statt file_get_contents, da oft auf Servern deaktiviert)
+                if (function_exists('curl_init')) {
+                    $ch = curl_init($arduinoUrl);
+                    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+                    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+                    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+                    curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                    
+                    $arduinoResponse = curl_exec($ch);
+                    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                    $curlError = curl_error($ch);
+                    curl_close($ch);
+                    
+                    if ($arduinoResponse && $httpCode == 200) {
+                        $arduinoData = json_decode($arduinoResponse, true);
+                        if ($arduinoData && isset($arduinoData['display_count']) && $arduinoData['has_data']) {
+                            $peopleEstimate = max(0, (int)$arduinoData['display_count']);
+                            $arduinoAvailable = true;
+                            logMessage("  → Personen (Arduino Fallback): {$peopleEstimate}");
+                        } else {
+                            logMessage("  → Arduino: Keine Daten verfügbar (has_data=false)");
+                        }
                     } else {
-                        logMessage("  → Arduino: Keine Daten verfügbar (has_data=false)");
+                        logMessage("  → Arduino: Verbindungsfehler (HTTP {$httpCode}, cURL: {$curlError})");
                     }
                 } else {
-                    logMessage("  → Arduino: Verbindungsfehler (HTTP {$httpCode}, cURL: {$curlError})");
+                    logMessage("  → Arduino: cURL nicht verfügbar");
                 }
-            } else {
-                logMessage("  → Arduino: cURL nicht verfügbar");
+            } catch (Exception $e) {
+                logMessage("  → Arduino: Fehler beim Abrufen: " . $e->getMessage());
             }
-        } catch (Exception $e) {
-            logMessage("  → Arduino: Fehler beim Abrufen: " . $e->getMessage());
         }
         
         // Fallback: Flow-Events nur wenn Arduino NICHT verfügbar ist
@@ -189,11 +234,13 @@ try {
         // 6. Methode bestimmen (Auslastung basiert nur auf Flow)
         $method = 'FLOW_ONLY';
         
-        // 7. Snapshot speichern
+        // 7. Snapshot speichern (MIT NEUEN FELDERN!)
         $queryInsert = "INSERT INTO occupancy_snapshot 
-                        (space_id, ts, people_estimate, level, noise_db, method)
+                        (space_id, ts, people_estimate, level, noise_db, method, 
+                         counter_raw, display_count, drift_corrected, scale_applied)
                         VALUES 
-                        (:space_id, NOW(), :people, :level, :noise, :method)";
+                        (:space_id, NOW(), :people, :level, :noise, :method,
+                         :counter_raw, :display_count, :drift_corrected, :scale_applied)";
         
         $stmtInsert = $db->prepare($queryInsert);
         $stmtInsert->bindParam(':space_id', $spaceId);
@@ -201,10 +248,15 @@ try {
         $stmtInsert->bindParam(':level', $level);
         $stmtInsert->bindValue(':noise', $noiseDelta, PDO::PARAM_STR);
         $stmtInsert->bindParam(':method', $method);
+        $stmtInsert->bindParam(':counter_raw', $counterRaw, PDO::PARAM_INT);
+        $stmtInsert->bindParam(':display_count', $displayCount, PDO::PARAM_INT);
+        $stmtInsert->bindValue(':drift_corrected', $driftCorrected ? 1 : 0, PDO::PARAM_INT);
+        $stmtInsert->bindValue(':scale_applied', $scaleApplied ? 1 : 0, PDO::PARAM_INT);
         
         if ($stmtInsert->execute()) {
             $snapshotId = $db->lastInsertId();
-            logMessage("  ✅ Snapshot erstellt (ID: {$snapshotId})");
+            $driftStatus = $driftCorrected ? " [DRIFT-KORREKTUR!]" : ($scaleApplied ? " [Skaliert]" : "");
+            logMessage("  ✅ Snapshot erstellt (ID: {$snapshotId}){$driftStatus}");
         } else {
             logMessage("  ❌ Fehler beim Speichern");
         }

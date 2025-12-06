@@ -1,9 +1,16 @@
 <?php
-// update_count.php - Erweitert für 2 separate ESP32-Boards (mit File-Locking)
+// update_count.php - Erweitert für 2 separate ESP32-Boards + Drift-Korrektur (v2.0)
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 
+// Datenbank- und Drift-Korrektur laden
+require_once __DIR__ . '/api/config/Database.php';
+require_once __DIR__ . '/api/includes/DriftCorrector.php';
+
 $dataFile = 'counter_data.json';
+
+// Space-ID für IM5 Aufenthaltsraum
+$SPACE_ID = '880e8400-e29b-41d4-a716-446655440001';
 
 // POST-Daten vom ESP32 empfangen
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -28,11 +35,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // ===== BOARD 1: Lichtschranken (sendet count + direction) =====
     if (isset($_POST['count'])) {
-        $data['count'] = intval($_POST['count']);
+        $counterRaw = intval($_POST['count']);
+        $data['count'] = $counterRaw;
         $data['direction'] = isset($_POST['direction']) ? $_POST['direction'] : 'IDLE';
         $data['last_count_update'] = time();
         $data['timestamp'] = $timestamp;
         $updated = true;
+        
+        // **NEU: Drift-Korrektur in Datenbank speichern**
+        try {
+            $db = Database::getInstance()->getConnection();
+            $driftCorrector = new DriftCorrector($db);
+            
+            // Config laden
+            $driftConfig = $driftCorrector->getDriftConfig($SPACE_ID);
+            
+            // Prüfe ob Drift-Korrektur notwendig
+            $needsDriftCorrection = $driftCorrector->shouldCorrectDrift($SPACE_ID, $counterRaw, $driftConfig);
+            
+            if ($needsDriftCorrection) {
+                // Drift erkannt! Counter auf 0 setzen
+                $driftCorrector->applyDriftCorrection($SPACE_ID);
+                $data['drift_corrected'] = true;
+                $data['count'] = 0; // Counter wurde auf 0 gesetzt
+                $counterRaw = 0;
+                
+                error_log("Drift-Korrektur angewendet für Space $SPACE_ID (Counter war $counterRaw)");
+            } else {
+                $data['drift_corrected'] = false;
+            }
+            
+            // Berechne display_count mit Skalierung
+            $displayCount = $driftCorrector->computeDisplayCount($counterRaw, $driftConfig);
+            $data['display_count'] = $displayCount;
+            
+            // Aktualisiere counter_state in DB
+            $driftCorrector->updateCounterState($SPACE_ID, $counterRaw, $displayCount);
+            
+        } catch (Exception $e) {
+            error_log("Fehler bei Drift-Korrektur: " . $e->getMessage());
+            $data['drift_corrected'] = false;
+            $data['display_count'] = $counterRaw;
+        }
     }
     
     // ===== BOARD 2: Mikrofon (sendet nur sound_level) =====
@@ -84,6 +128,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         echo json_encode([
             'status' => 'success',
             'count' => isset($data['count']) ? $data['count'] : null,
+            'display_count' => isset($data['display_count']) ? $data['display_count'] : null,
+            'drift_corrected' => isset($data['drift_corrected']) ? $data['drift_corrected'] : false,
             'sound_level' => isset($data['sound_level']) ? $data['sound_level'] : null,
             'message' => 'Data merged successfully'
         ]);
@@ -107,6 +153,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     if (file_exists($dataFile)) {
         $data = json_decode(file_get_contents($dataFile), true);
+        
+        // **NEU: Lade counter_state aus Datenbank falls verfügbar**
+        try {
+            $db = Database::getInstance()->getConnection();
+            $driftCorrector = new DriftCorrector($db);
+            $counterState = $driftCorrector->getCounterState($SPACE_ID);
+            
+            if ($counterState) {
+                $data['counter_raw'] = (int)$counterState['counter_raw'];
+                $data['display_count'] = (int)$counterState['display_count'];
+                $data['drift_corrections_today'] = (int)$counterState['drift_corrections_today'];
+            }
+        } catch (Exception $e) {
+            error_log("Fehler beim Laden des Counter-State: " . $e->getMessage());
+        }
         
         // Berechne Sekunden seit letztem Update (global)
         $data['seconds_since_update'] = isset($data['last_update']) ? time() - $data['last_update'] : 999999;

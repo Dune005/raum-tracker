@@ -450,15 +450,26 @@
                 <div class="col-12">
                     <div class="glass-card p-4">
                         <div class="d-flex justify-content-between align-items-center mb-4">
-                            <div>
+                            <div class="flex-grow-1">
                                 <h5 class="fw-bold mb-1">
                                     <i class="bi bi-calendar-week me-2"></i>Wochenvergleich Peak-Auslastung
                                 </h5>
-                                <p class="small text-secondary mb-0">Höchste Personenanzahl pro Tag (Letzte 7 Tage)</p>
+                                <p class="small text-secondary mb-0">Höchste Personenanzahl pro Tag</p>
                             </div>
-                            <span class="badge bg-success bg-opacity-25 text-success border border-success">
-                                Peak-Werte
-                            </span>
+                            <div class="d-flex align-items-center gap-3">
+                                <button id="prevWeek" class="btn btn-sm btn-outline-primary" title="Vorherige Woche">
+                                    <i class="bi bi-chevron-left"></i>
+                                </button>
+                                <div class="text-center">
+                                    <span class="badge bg-success bg-opacity-25 text-success border border-success" id="weekLabel">
+                                        KW --
+                                    </span>
+                                    <div class="small text-secondary mt-1" id="weekRange">-- bis --</div>
+                                </div>
+                                <button id="nextWeek" class="btn btn-sm btn-outline-primary" title="Nächste Woche">
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+                            </div>
                         </div>
                         <div style="position: relative; height: 300px;">
                             <canvas id="weeklyChart"></canvas>
@@ -492,6 +503,7 @@
         let lastArduinoCount = null;
         let occupancyChart = null;
         let weeklyChart = null;
+        let currentWeekOffset = 0; // 0 = aktuelle Woche, -1 = letzte Woche, etc.
 
         // Animate counter
         function animateValue(element, start, end, duration) {
@@ -539,15 +551,16 @@
                     return;
                 }
 
-                // Update count
+                // Update count (zeige display_count statt counter_raw!)
                 const countElement = document.getElementById('arduino-count');
+                const displayCount = data.display_count !== undefined ? data.display_count : data.count;
                 
-                if (data.count !== lastArduinoCount && lastArduinoCount !== null) {
-                    animateValue(countElement, lastArduinoCount, data.count, 500);
+                if (displayCount !== lastArduinoCount && lastArduinoCount !== null) {
+                    animateValue(countElement, lastArduinoCount, displayCount, 500);
                 } else {
-                    countElement.textContent = data.count;
+                    countElement.textContent = displayCount;
                 }
-                lastArduinoCount = data.count;
+                lastArduinoCount = displayCount;
 
                 // Update sound
                 if (data.sound_db !== null && data.sound_level !== null) {
@@ -837,67 +850,144 @@
             });
         }
 
-        // Load Weekly Data (Peak-Auslastung pro Tag aus Snapshots)
+        // Hilfsfunktion: Kalenderwoche berechnen (ISO 8601)
+        function getWeekNumber(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            const dayNum = d.getUTCDay() || 7;
+            d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+        }
+
+        // Hilfsfunktion: Start und Ende einer Woche berechnen (Montag - Sonntag)
+        function getWeekRange(offset = 0) {
+            const now = new Date();
+            const currentDay = now.getDay(); // 0=Sonntag, 1=Montag, ..., 6=Samstag
+            const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // Montag dieser Woche
+            
+            // Montag der aktuellen Woche
+            const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+            
+            // Offset anwenden (0 = aktuelle Woche, -1 = letzte Woche, etc.)
+            monday.setDate(monday.getDate() + (offset * 7));
+            
+            // Sonntag (6 Tage nach Montag)
+            const sunday = new Date(monday);
+            sunday.setDate(monday.getDate() + 6);
+            
+            // Zeitstempel auf Tagesanfang/Tagesende setzen
+            monday.setHours(0, 0, 0, 0);
+            sunday.setHours(23, 59, 59, 999);
+            
+            return { monday, sunday };
+        }
+
+        // Hilfsfunktion: Formatiere Datum (dd.MM.yyyy)
+        function formatDate(date) {
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}.${month}.${year}`;
+        }
+
+        // Load Weekly Data (Peak-Auslastung pro Tag der ausgewählten Woche)
         async function loadWeeklyData() {
             try {
-                // Letzte 7 Tage
-                const now = new Date();
-                const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                const from = sevenDaysAgo.toISOString().slice(0, 19).replace('T', ' ');
-                const to = now.toISOString().slice(0, 19).replace('T', ' ');
+                // Berechne Start und Ende der ausgewählten Woche
+                const { monday, sunday } = getWeekRange(currentWeekOffset);
+                
+                // API-Format: YYYY-MM-DD HH:MM:SS
+                const from = monday.toISOString().slice(0, 19).replace('T', ' ');
+                const to = sunday.toISOString().slice(0, 19).replace('T', ' ');
 
-                // Hole Snapshots der letzten 7 Tage
+                // Hole Snapshots dieser Woche
                 const response = await fetch(`${API_BASE}/occupancy/history?space_id=${SPACE_ID}&from=${from}&to=${to}&interval=5min`);
                 const data = await response.json();
+
+                // Wochenlabel aktualisieren
+                const weekNumber = getWeekNumber(monday);
+                const year = monday.getFullYear();
+                document.getElementById('weekLabel').textContent = `KW ${weekNumber} / ${year}`;
+                document.getElementById('weekRange').textContent = `${formatDate(monday)} - ${formatDate(sunday)}`;
+                
+                // Next-Button deaktivieren wenn aktuelle Woche
+                document.getElementById('nextWeek').disabled = (currentWeekOffset === 0);
+
+                // Array für Peak pro Wochentag [Mo, Di, Mi, Do, Fr, Sa, So]
+                const weekdayPeaks = [0, 0, 0, 0, 0, 0, 0];
+                const weekdayDates = {}; // Speichere welche Dates zu welchem Wochentag gehören
 
                 if (data.success && data.data.datapoints && data.data.datapoints.length > 0) {
                     const datapoints = data.data.datapoints;
                     
-                    // Array für Peak pro Wochentag [Mo, Di, Mi, Do, Fr, Sa, So]
-                    const weekdayPeaks = [0, 0, 0, 0, 0, 0, 0];
-                    
                     // Gruppiere Snapshots nach Tag und finde Peak pro Tag
-                    const dayPeaks = {}; // Key: YYYY-MM-DD, Value: max people_estimate
+                    const dayPeaks = {}; // Key: YYYY-MM-DD, Value: { peak, weekdayIndex }
                     
                     for (const point of datapoints) {
                         const timestamp = new Date(point.timestamp);
                         const dateKey = timestamp.toISOString().slice(0, 10); // YYYY-MM-DD
                         const people = Math.round(point.people_estimate_avg || 0);
                         
-                        // Aktualisiere Peak für diesen Tag
-                        if (!dayPeaks[dateKey] || people > dayPeaks[dateKey]) {
-                            dayPeaks[dateKey] = people;
+                        // Prüfe ob Datum in der ausgewählten Woche liegt
+                        if (timestamp >= monday && timestamp <= sunday) {
+                            // Aktualisiere Peak für diesen Tag
+                            if (!dayPeaks[dateKey] || people > dayPeaks[dateKey].peak) {
+                                const weekday = timestamp.getDay();
+                                const weekdayIndex = weekday === 0 ? 6 : weekday - 1;
+                                dayPeaks[dateKey] = { peak: people, weekdayIndex };
+                            }
                         }
                     }
                     
-                    // Ordne Peaks den Wochentagen zu
-                    for (const [dateKey, peak] of Object.entries(dayPeaks)) {
-                        const date = new Date(dateKey + 'T12:00:00'); // Noon um Timezone-Probleme zu vermeiden
-                        const weekday = date.getDay(); // 0=Sonntag, 1=Montag, ..., 6=Samstag
-                        const weekdayIndex = weekday === 0 ? 6 : weekday - 1; // Umrechnen zu 0=Montag, 6=Sonntag
-                        
-                        // Verwende den höchsten Peak für diesen Wochentag (falls mehrere Tage)
-                        if (peak > weekdayPeaks[weekdayIndex]) {
-                            weekdayPeaks[weekdayIndex] = peak;
-                        }
+                    // Übertrage Peaks zu Wochentagen (nur der spezifische Tag!)
+                    for (const [dateKey, data] of Object.entries(dayPeaks)) {
+                        weekdayPeaks[data.weekdayIndex] = data.peak;
                     }
+                }
+                
+                // Chart aktualisieren
+                if (weeklyChart) {
+                    weeklyChart.data.datasets[0].data = weekdayPeaks;
                     
-                    // Chart aktualisieren
-                    if (weeklyChart) {
-                        weeklyChart.data.datasets[0].data = weekdayPeaks;
-                        weeklyChart.update('none');
-                    }
-                } else {
-                    // Keine Daten
-                    if (weeklyChart) {
-                        weeklyChart.data.datasets[0].data = [0, 0, 0, 0, 0, 0, 0];
-                        weeklyChart.update('none');
-                    }
+                    // Farben anpassen: aktuelle Woche = blau, vergangene = grau
+                    const isCurrentWeek = (currentWeekOffset === 0);
+                    const colors = weekdayPeaks.map((value, index) => {
+                        if (value === 0) return 'rgba(100, 116, 139, 0.3)'; // Keine Daten = hellgrau
+                        if (isCurrentWeek && index < 5) return 'rgba(59, 130, 246, 0.7)'; // Mo-Fr aktuell
+                        if (isCurrentWeek) return 'rgba(100, 116, 139, 0.5)'; // Sa-So aktuell
+                        return 'rgba(100, 116, 139, 0.6)'; // Vergangene Wochen
+                    });
+                    
+                    const borderColors = weekdayPeaks.map((value, index) => {
+                        if (value === 0) return 'rgb(100, 116, 139)';
+                        if (isCurrentWeek && index < 5) return 'rgb(59, 130, 246)';
+                        if (isCurrentWeek) return 'rgb(100, 116, 139)';
+                        return 'rgb(100, 116, 139)';
+                    });
+                    
+                    weeklyChart.data.datasets[0].backgroundColor = colors;
+                    weeklyChart.data.datasets[0].borderColor = borderColors;
+                    weeklyChart.update('none');
                 }
             } catch (error) {
                 console.error('Weekly Data Error:', error);
             }
         }
+
+        // Wochennavigation
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('prevWeek').addEventListener('click', () => {
+                currentWeekOffset--;
+                loadWeeklyData();
+            });
+            
+            document.getElementById('nextWeek').addEventListener('click', () => {
+                if (currentWeekOffset < 0) {
+                    currentWeekOffset++;
+                    loadWeeklyData();
+                }
+            });
+        });
 
         // Initialize Chart
         function initChart() {

@@ -23,8 +23,8 @@ try {
         Response::notFound('Space not found');
     }
     
-    // Hole neuesten Occupancy Snapshot
-    $queryOcc = "SELECT ts, people_estimate, level, noise_db, method 
+    // Hole neuesten Occupancy Snapshot (MIT DISPLAY_COUNT!)
+    $queryOcc = "SELECT ts, people_estimate, level, noise_db, method, display_count 
                  FROM occupancy_snapshot 
                  WHERE space_id = :space_id 
                  ORDER BY ts DESC 
@@ -40,6 +40,7 @@ try {
         $snapshot = [
             'ts' => date('Y-m-d H:i:s'),
             'people_estimate' => null,
+            'display_count' => null,
             'level' => 'LOW',
             'noise_db' => null,
             'method' => 'FLOW_ONLY'
@@ -72,7 +73,7 @@ try {
         'space_name' => $space['name'],
         'timestamp' => $snapshot['ts'],
         'level' => $snapshot['level'],
-        'people_estimate' => $snapshot['people_estimate'],
+        'people_count' => $snapshot['display_count'] ?? $snapshot['people_estimate'],  // Korrigierter Wert für Display
         'noise_db' => $snapshot['noise_db'],
         'method' => $snapshot['method'],
         'display_text' => $config['text'],
