@@ -1,13 +1,11 @@
 /*
- * ESP32-C6 Personenzähler mit Drift-Korrektur-Synchronisation
+ * ESP32-C6 Personenzähler mit Drift-Korrektur (HYBRID-VERSION)
  * 
- * Version: 2.0 (6. Dezember 2025)
+ * Basiert auf funktionierendem Code vom 27.11.2025
+ * + JSON-Parsing für Drift-Korrektur vom 06.12.2025
  * 
- * Änderungen:
- * - ArduinoJson integriert für Response-Parsing
- * - sendToUpdate() parst JSON-Response vom Server
- * - Bei drift_corrected=true wird lokaler Counter auf 0 gesetzt
- * - Fallback wenn Server offline oder JSON ungültig
+ * Version: 2.1 Hybrid
+ * Datum: 8. Dezember 2025
  * 
  * Hardware: ESP32-C6-N8 mit 3x Lichtschranken (VL53L0X + VL6180X)
  */
@@ -20,7 +18,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoOTA.h>
 #include <time.h>
-#include <ArduinoJson.h>  // ← NEU: JSON-Parsing für Drift-Korrektur
+#include <ArduinoJson.h>
 #include "connectWiFi_hochschule.h"
 
 const char* serverURL = "https://corner.klaus-klebband.ch/update_count.php";
@@ -43,7 +41,7 @@ Adafruit_VL53L0X sensor1 = Adafruit_VL53L0X();
 Adafruit_VL53L0X sensor2 = Adafruit_VL53L0X();
 Adafruit_VL6180X sensorMiddle = Adafruit_VL6180X();
 
-int count = 0;  // ← Wird vom Server auf 0 gesetzt bei Drift-Korrektur!
+int count = 0;
 unsigned long lastTriggerTime = 0;
 unsigned long lastUploadTime = 0;
 unsigned long lastHeartbeatTime = 0;
@@ -59,14 +57,14 @@ const int triggerThreshold2 = 950;
 const int triggerThresholdMiddle = 950;
 const unsigned long maxSequenceTime = 1000;
 
-enum DirectionState { IDLE, POSSIBLE_A, MIDDLE_CONFIRM, POSSIBLE_B };
+enum DirectionState { IDLE, POSSIBLE_A, MIDDLE_CONFIRM_IN, MIDDLE_CONFIRM_OUT, POSSIBLE_B };
 DirectionState state = IDLE;
 
 bool pendingSend = false;
 String pendingDirection = "";
 unsigned long pendingDuration = 0;
 
-// ===== NEU: Funktion mit JSON-Response-Parsing =====
+// ===== JSON-PARSING FUNKTION (NEU) =====
 void sendToUpdate(String direction, unsigned long durationMs) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("❌ Update: Keine WiFi-Verbindung");
@@ -98,37 +96,32 @@ void sendToUpdate(String direction, unsigned long durationMs) {
     String response = http.getString();
     Serial.println("✅ " + String(httpResponseCode) + " (" + String(duration) + "ms)");
     
-    // **JSON-Response parsen**
-    if (response.length() > 0) {
+    // JSON-Response parsen (optional - fällt nicht ab wenn es nicht funktioniert)
+    if (response.length() > 0 && response.length() < 1000) {
       StaticJsonDocument<512> doc;
       DeserializationError error = deserializeJson(doc, response);
       
       if (!error) {
-        // Prüfe ob drift_corrected Flag gesetzt ist
-        bool driftCorrected = doc["drift_corrected"] | false;
-        
-        if (driftCorrected) {
-          // **DRIFT-KORREKTUR: Counter auf 0 setzen!**
-          int oldCount = count;
-          count = 0;
-          Serial.println("🔄 DRIFT-KORREKTUR: Counter " + String(oldCount) + " → 0 (Server-Reset)");
-        } else {
-          // Normal: Server-Count als Bestätigung
-          if (doc.containsKey("count")) {
-            int serverCount = doc["count"];
-            Serial.println("   ✓ Server-Count: " + String(serverCount));
+        // Prüfe drift_corrected Flag
+        if (doc.containsKey("drift_corrected")) {
+          bool driftCorrected = doc["drift_corrected"];
+          
+          if (driftCorrected) {
+            int oldCount = count;
+            count = 0;
+            Serial.println("   🔄 DRIFT-KORREKTUR: Counter " + String(oldCount) + " → 0");
+          } else {
+            Serial.println("   ✓ Server-Count: " + String(doc["count"].as<int>()));
           }
         }
         
-        // Optional: display_count für Debugging
+        // Optional: Display-Count
         if (doc.containsKey("display_count")) {
-          int displayCount = doc["display_count"];
-          Serial.println("   ℹ️ Display-Count: " + String(displayCount));
+          Serial.println("   ℹ️ Display-Count: " + String(doc["display_count"].as<int>()));
         }
       } else {
-        // JSON-Parsing fehlgeschlagen - nicht kritisch
-        Serial.println("   ⚠️ JSON-Parse-Error: " + String(error.c_str()));
-        Serial.println("   Response: " + response);
+        // Kein JSON oder Parse-Fehler - nicht kritisch!
+        Serial.println("   ⚠️ Keine JSON-Response (Fallback-Modus)");
       }
     }
   } else {
@@ -138,8 +131,6 @@ void sendToUpdate(String direction, unsigned long durationMs) {
   http.end();
   delete client;
 }
-
-// ===== REST DES CODES (UNVERÄNDERT) =====
 
 String getISO8601Timestamp() {
   time_t now = time(nullptr);
@@ -260,8 +251,8 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   
-  Serial.println("ESP32-C6 Personenzähler mit Drift-Korrektur v2.0");
-  Serial.println("==================================================");
+  Serial.println("ESP32-C6 Personenzähler mit Drift-Korrektur (Hybrid v2.1)");
+  Serial.println("=========================================================");
   
   pinMode(XSHUT_VL53L0X_1, OUTPUT);
   pinMode(XSHUT_VL53L0X_2, OUTPUT);
@@ -364,11 +355,11 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   
-  // Prüfe WiFi-Verbindung und stelle sie wieder her falls nötig
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("\n⚠️ WiFi-Verbindung verloren - starte Wiederverbindung...");
-    connectWiFi();  // Versucht es nun unbegrenzt bis es klappt
-    Serial.println("✅ WiFi wiederhergestellt - setze normalen Betrieb fort\n");
+    Serial.println("⚠️ WiFi-Verbindung verloren - versuche Reconnect...");
+    connectWiFi();
+    delay(5000);
+    return;
   }
   
   uint16_t range1 = 0;
@@ -389,59 +380,46 @@ void loop() {
   bool triggerMiddle = (rangeMiddle < triggerThresholdMiddle && rangeMiddle >= MIN_DETECTION_DISTANCE);
   bool triggerB = (range2 < triggerThreshold2 && range2 >= MIN_DETECTION_DISTANCE);
   
-  // DEBUG: Zeige Sensor-Werte alle 2 Sekunden
+  // DEBUG: Zeige Sensor-Werte alle 3 Sekunden
   static unsigned long lastDebugPrint = 0;
   unsigned long currentTime = millis();
-  if (currentTime - lastDebugPrint > 2000) {
-    Serial.printf("📏 Sensoren: A=%d mm, M=%d mm, B=%d mm | State=%d | Count=%d\n", 
+  if (currentTime - lastDebugPrint > 3000) {
+    Serial.printf("📏 A=%dmm M=%dmm B=%dmm | State=%d Count=%d\n", 
                   range1, rangeMiddle, range2, state, count);
     lastDebugPrint = currentTime;
   }
   
+  // State Machine (ORIGINAL LOGIK vom funktionierenden Code)
   switch (state) {
     case IDLE:
       if (triggerA && !triggerMiddle && !triggerB) {
         state = POSSIBLE_A;
         lastTriggerTime = currentTime;
-        Serial.println("🔵 Sensor A getriggert (Eingang-Start)");  // DEBUG
+        Serial.println("🔵 Sensor A → Start Eingang-Sequenz");
       } else if (triggerB && !triggerMiddle && !triggerA) {
         state = POSSIBLE_B;
         lastTriggerTime = currentTime;
-        Serial.println("🔵 Sensor B getriggert (Ausgang-Start)");  // DEBUG
+        Serial.println("🔵 Sensor B → Start Ausgang-Sequenz");
       }
       break;
       
     case POSSIBLE_A:
       if (triggerMiddle) {
-        state = MIDDLE_CONFIRM;
+        state = MIDDLE_CONFIRM_IN;
         lastTriggerTime = currentTime;
       } else if (currentTime - lastTriggerTime > maxSequenceTime) {
         state = IDLE;
       }
       break;
       
-    case MIDDLE_CONFIRM:
-      // Prüfe ob Sequenz von A kam (EINGANG) oder von B (AUSGANG)
+    case MIDDLE_CONFIRM_IN:
       if (triggerB && !triggerMiddle && (currentTime - lastTriggerTime < maxSequenceTime)) {
-        // Kam von POSSIBLE_A → Sequenz A→M→B = EINGANG
         unsigned long durationMs = currentTime - lastTriggerTime;
         count++;
         Serial.println("\n🚶 EINGANG (A→M→B) | Count: " + String(count) + " | " + String(durationMs) + "ms");
         
         pendingSend = true;
         pendingDirection = "IN";
-        pendingDuration = durationMs;
-        
-        state = IDLE;
-        lastUploadTime = currentTime;
-      } else if (triggerA && !triggerMiddle && (currentTime - lastTriggerTime < maxSequenceTime)) {
-        // Kam von POSSIBLE_B → Sequenz B→M→A = AUSGANG
-        unsigned long durationMs = currentTime - lastTriggerTime;
-        count--;
-        Serial.println("\n🚪 AUSGANG (B→M→A) | Count: " + String(count) + " | " + String(durationMs) + "ms");
-        
-        pendingSend = true;
-        pendingDirection = "OUT";
         pendingDuration = durationMs;
         
         state = IDLE;
@@ -453,8 +431,25 @@ void loop() {
       
     case POSSIBLE_B:
       if (triggerMiddle) {
-        state = MIDDLE_CONFIRM;
+        state = MIDDLE_CONFIRM_OUT;
         lastTriggerTime = currentTime;
+      } else if (currentTime - lastTriggerTime > maxSequenceTime) {
+        state = IDLE;
+      }
+      break;
+      
+    case MIDDLE_CONFIRM_OUT:
+      if (triggerA && !triggerMiddle && (currentTime - lastTriggerTime < maxSequenceTime)) {
+        unsigned long durationMs = currentTime - lastTriggerTime;
+        count--;
+        Serial.println("\n🚪 AUSGANG (B→M→A) | Count: " + String(count) + " | " + String(durationMs) + "ms");
+        
+        pendingSend = true;
+        pendingDirection = "OUT";
+        pendingDuration = durationMs;
+        
+        state = IDLE;
+        lastUploadTime = currentTime;
       } else if (currentTime - lastTriggerTime > maxSequenceTime) {
         state = IDLE;
       }

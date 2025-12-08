@@ -528,6 +528,16 @@
         async function loadArduinoData() {
             try {
                 const response = await fetch(ARDUINO_PHP);
+                
+                // **NEU: Prüfe Content-Type - bei HTML = PHP-Fehler!**
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const errorText = await response.text();
+                    console.error('❌ update_count.php gibt HTML statt JSON zurück!');
+                    console.error('PHP-Fehler:', errorText.substring(0, 500));
+                    throw new Error('Server gibt keinen JSON zurück - siehe Console für PHP-Fehler');
+                }
+                
                 const data = await response.json();
 
                 if (!data.has_data) {
