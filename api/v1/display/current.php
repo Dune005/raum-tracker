@@ -73,7 +73,7 @@ try {
         'space_name' => $space['name'],
         'timestamp' => $snapshot['ts'],
         'level' => $snapshot['level'],
-        'people_count' => $snapshot['display_count'] ?? $snapshot['people_estimate'],  // Korrigierter Wert für Display
+        'people_count' => (int)($snapshot['people_estimate'] ?? 0),  // people_estimate enthält bereits display_count vom Cron
         'noise_db' => $snapshot['noise_db'],
         'method' => $snapshot['method'],
         'display_text' => $config['text'],

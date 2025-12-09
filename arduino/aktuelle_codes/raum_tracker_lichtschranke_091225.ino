@@ -1,13 +1,19 @@
 /*
- * ESP32-C6 Personenzähler mit Drift-Korrektur (HYBRID-VERSION)
+ * ESP32-C6 Personenzähler mit Drift-Korrektur (HYBRID-VERSION v2.2)
  * 
  * Basiert auf funktionierendem Code vom 27.11.2025
  * + JSON-Parsing für Drift-Korrektur vom 06.12.2025
+ * + Korrekturen für WiFi-Stabilität und Online-Status
  * 
- * Version: 2.1 Hybrid
- * Datum: 8. Dezember 2025
+ * Version: 2.2 Hybrid - STABLE
+ * Datum: 9. Dezember 2025
  * 
  * Hardware: ESP32-C6-N8 mit 3x Lichtschranken (VL53L0X + VL6180X)
+ * 
+ * Änderungen gegenüber v2.1:
+ * - resetState() überall korrekt verwendet (WiFi-Stack braucht Pausen!)
+ * - Regelmäßige IDLE-Updates alle 500ms (damit Dashboard Online-Status sieht)
+ * - State Machine robuster gegen schnelle Durchläufe
  */
 
 #include <Wire.h>
@@ -57,14 +63,27 @@ const int triggerThreshold2 = 950;
 const int triggerThresholdMiddle = 950;
 const unsigned long maxSequenceTime = 1000;
 
-enum DirectionState { IDLE, POSSIBLE_A, MIDDLE_CONFIRM_IN, MIDDLE_CONFIRM_OUT, POSSIBLE_B };
+enum DirectionState { IDLE, POSSIBLE_A, MIDDLE_CONFIRM, POSSIBLE_B };
 DirectionState state = IDLE;
 
 bool pendingSend = false;
 String pendingDirection = "";
 unsigned long pendingDuration = 0;
 
-// ===== JSON-PARSING FUNKTION (NEU) =====
+// ===== RESET STATE MIT DEBOUNCE (KRITISCH FÜR WIFI-STACK!) =====
+void resetState() {
+  state = IDLE;
+  delay(debounceTime);  // 800ms Pause - gibt WiFi-Stack Zeit für Hintergrundaufgaben!
+}
+
+// ===== QUEUE SEND (wie im 27.11er Code) =====
+void queueSend(String direction, unsigned long durationMs) {
+  pendingSend = true;
+  pendingDirection = direction;
+  pendingDuration = durationMs;
+}
+
+// ===== JSON-PARSING FUNKTION (MIT DRIFT-KORREKTUR) =====
 void sendToUpdate(String direction, unsigned long durationMs) {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("❌ Update: Keine WiFi-Verbindung");
@@ -251,8 +270,8 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   
-  Serial.println("ESP32-C6 Personenzähler mit Drift-Korrektur (Hybrid v2.1)");
-  Serial.println("=========================================================");
+  Serial.println("ESP32-C6 Personenzähler mit Drift-Korrektur (Hybrid v2.2 STABLE)");
+  Serial.println("===================================================================");
   
   pinMode(XSHUT_VL53L0X_1, OUTPUT);
   pinMode(XSHUT_VL53L0X_2, OUTPUT);
@@ -362,110 +381,113 @@ void loop() {
     return;
   }
   
+  unsigned long currentTime = millis();
+  
+  // ===== SENSOR-VARIABLEN (werden in den einzelnen Checks befüllt) =====
   uint16_t range1 = 0;
   uint16_t range2 = 0;
   uint8_t rangeMiddle = 0;
   
-  if (sensor1.isRangeComplete()) {
-    range1 = sensor1.readRangeResult();
-  }
-  
-  if (sensor2.isRangeComplete()) {
-    range2 = sensor2.readRangeResult();
-  }
-  
-  rangeMiddle = sensorMiddle.readRange();
-  
-  bool triggerA = (range1 < triggerThreshold1 && range1 >= MIN_DETECTION_DISTANCE);
-  bool triggerMiddle = (rangeMiddle < triggerThresholdMiddle && rangeMiddle >= MIN_DETECTION_DISTANCE);
-  bool triggerB = (range2 < triggerThreshold2 && range2 >= MIN_DETECTION_DISTANCE);
-  
-  // DEBUG: Zeige Sensor-Werte alle 3 Sekunden
+  // DEBUG: Zeige Sensor-Werte alle 5 Sekunden
   static unsigned long lastDebugPrint = 0;
-  unsigned long currentTime = millis();
-  if (currentTime - lastDebugPrint > 3000) {
-    Serial.printf("📏 A=%dmm M=%dmm B=%dmm | State=%d Count=%d\n", 
-                  range1, rangeMiddle, range2, state, count);
+  if (currentTime - lastDebugPrint > 5000) {
+    Serial.println("===== Status =====");
+    Serial.println("WiFi: " + String(WiFi.status() == WL_CONNECTED ? "✅" : "❌") + " (RSSI: " + String(WiFi.RSSI()) + " dBm)");
+    Serial.println("Count: " + String(count));
+    Serial.println("State: " + String(state == IDLE ? "IDLE" : (state == POSSIBLE_A ? "POSSIBLE_A" : (state == MIDDLE_CONFIRM ? "MIDDLE_CONFIRM" : "POSSIBLE_B"))));
+    Serial.println("RAM frei: " + String(ESP.getFreeHeap() / 1024) + " KB");
+    Serial.println("==================");
     lastDebugPrint = currentTime;
   }
   
-  // State Machine (ORIGINAL LOGIK vom funktionierenden Code)
-  switch (state) {
-    case IDLE:
-      if (triggerA && !triggerMiddle && !triggerB) {
-        state = POSSIBLE_A;
-        lastTriggerTime = currentTime;
-        Serial.println("🔵 Sensor A → Start Eingang-Sequenz");
-      } else if (triggerB && !triggerMiddle && !triggerA) {
-        state = POSSIBLE_B;
-        lastTriggerTime = currentTime;
-        Serial.println("🔵 Sensor B → Start Ausgang-Sequenz");
-      }
-      break;
-      
-    case POSSIBLE_A:
-      if (triggerMiddle) {
-        state = MIDDLE_CONFIRM_IN;
-        lastTriggerTime = currentTime;
-      } else if (currentTime - lastTriggerTime > maxSequenceTime) {
-        state = IDLE;
-      }
-      break;
-      
-    case MIDDLE_CONFIRM_IN:
-      if (triggerB && !triggerMiddle && (currentTime - lastTriggerTime < maxSequenceTime)) {
-        unsigned long durationMs = currentTime - lastTriggerTime;
-        count++;
-        Serial.println("\n🚶 EINGANG (A→M→B) | Count: " + String(count) + " | " + String(durationMs) + "ms");
-        
-        pendingSend = true;
-        pendingDirection = "IN";
-        pendingDuration = durationMs;
-        
-        state = IDLE;
-        lastUploadTime = currentTime;
-      } else if (currentTime - lastTriggerTime > maxSequenceTime) {
-        state = IDLE;
-      }
-      break;
-      
-    case POSSIBLE_B:
-      if (triggerMiddle) {
-        state = MIDDLE_CONFIRM_OUT;
-        lastTriggerTime = currentTime;
-      } else if (currentTime - lastTriggerTime > maxSequenceTime) {
-        state = IDLE;
-      }
-      break;
-      
-    case MIDDLE_CONFIRM_OUT:
-      if (triggerA && !triggerMiddle && (currentTime - lastTriggerTime < maxSequenceTime)) {
-        unsigned long durationMs = currentTime - lastTriggerTime;
-        count--;
-        Serial.println("\n🚪 AUSGANG (B→M→A) | Count: " + String(count) + " | " + String(durationMs) + "ms");
-        
-        pendingSend = true;
-        pendingDirection = "OUT";
-        pendingDuration = durationMs;
-        
-        state = IDLE;
-        lastUploadTime = currentTime;
-      } else if (currentTime - lastTriggerTime > maxSequenceTime) {
-        state = IDLE;
-      }
-      break;
+  // ===== STATE MACHINE (27.11er BEWÄHRTE LOGIK!) =====
+  // Sensor A - Auswertung
+  if (sensor1.isRangeComplete()) {
+    range1 = sensor1.readRangeResult();
+    bool range1_valid = (range1 >= MIN_DETECTION_DISTANCE && range1 <= MAX_DETECTION_DISTANCE);
+    bool A_trigger = range1_valid && (range1 < triggerThreshold1);
+    
+    if (state == IDLE && A_trigger) {
+      state = POSSIBLE_A;
+      lastTriggerTime = currentTime;
+      Serial.println("→ Sensor A: " + String(range1) + "mm");
+    } 
+    else if (state == POSSIBLE_B && A_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
+      unsigned long durationMs = currentTime - lastTriggerTime;
+      count--;
+      if (count < 0) count = 0;
+      Serial.println("\n🚪 AUSGANG (B→M→A) | Count: " + String(count) + " | " + String(durationMs) + "ms");
+      queueSend("OUT", durationMs);
+      resetState();
+    } 
+    else if ((state == POSSIBLE_A || state == MIDDLE_CONFIRM || state == POSSIBLE_B) && (currentTime - lastTriggerTime) > maxSequenceTime) {
+      Serial.println("→ Timeout State=" + String(state));
+      resetState();
+    }
   }
   
-  if (pendingSend && (currentTime - lastUploadTime > uploadInterval)) {
+  // Sensor Middle - Auswertung
+  rangeMiddle = sensorMiddle.readRange();
+  bool rangeMiddle_valid = (rangeMiddle >= MIN_DETECTION_DISTANCE && rangeMiddle <= MAX_DETECTION_DISTANCE);
+  bool Middle_trigger = rangeMiddle_valid && (rangeMiddle < triggerThresholdMiddle);
+  
+  if (state == POSSIBLE_A && Middle_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
+    state = MIDDLE_CONFIRM;
+    Serial.println("  ✓ Middle: " + String(rangeMiddle) + "mm - Bestätigung");
+  } 
+  else if (state == POSSIBLE_B && Middle_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
+    state = MIDDLE_CONFIRM;
+    Serial.println("  ✓ Middle: " + String(rangeMiddle) + "mm - Bestätigung");
+  }
+  
+  // Sensor B - Auswertung
+  if (sensor2.isRangeComplete()) {
+    range2 = sensor2.readRangeResult();
+    bool range2_valid = (range2 >= MIN_DETECTION_DISTANCE && range2 <= MAX_DETECTION_DISTANCE);
+    bool B_trigger = range2_valid && (range2 < triggerThreshold2);
+    
+    if (state == IDLE && B_trigger) {
+      state = POSSIBLE_B;
+      lastTriggerTime = currentTime;
+      Serial.println("→ Sensor B: " + String(range2) + "mm");
+    } 
+    else if (state == MIDDLE_CONFIRM && B_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
+      unsigned long durationMs = currentTime - lastTriggerTime;
+      count++;
+      Serial.println("\n🚶 EINGANG (A→M→B) | Count: " + String(count) + " | " + String(durationMs) + "ms");
+      queueSend("IN", durationMs);
+      resetState();
+    } 
+    else if (state == POSSIBLE_A && B_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
+      unsigned long durationMs = currentTime - lastTriggerTime;
+      count++;
+      Serial.println("\n🚶 EINGANG (A→B direkt) | Count: " + String(count) + " | " + String(durationMs) + "ms");
+      queueSend("IN", durationMs);
+      resetState();
+    } 
+    else if ((state == POSSIBLE_A || state == MIDDLE_CONFIRM || state == POSSIBLE_B) && (currentTime - lastTriggerTime) > maxSequenceTime) {
+      Serial.println("→ Timeout State=" + String(state));
+      resetState();
+    }
+  }
+  
+  // ===== SENDE EVENTS (BEI IN/OUT) =====
+  if (pendingSend) {
     sendToUpdate(pendingDirection, pendingDuration);
     sendFlowEventToAPIAsync(pendingDirection, pendingDuration);
     pendingSend = false;
   }
   
+  // ===== REGELMÄSSIGE IDLE-UPDATES (ALLE 500ms) =====
+  // **KRITISCH: Damit Dashboard weiß, dass Controller online ist!**
+  if (currentTime - lastUploadTime > uploadInterval) {
+    sendToUpdate("IDLE", 0);
+    lastUploadTime = currentTime;
+  }
+  
+  // ===== HEARTBEAT (ALLE 5 MINUTEN) =====
   if (currentTime - lastHeartbeatTime > heartbeatInterval) {
     sendHeartbeatAsync();
     lastHeartbeatTime = currentTime;
   }
-  
-  delay(10);
 }

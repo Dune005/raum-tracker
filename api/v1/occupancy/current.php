@@ -90,9 +90,9 @@ try {
         'space_name' => $space['name'],
         'timestamp' => $snapshot['ts'],
         'level' => $snapshot['level'],
-        'people_estimate' => $snapshot['people_estimate'],  // Legacy-Support
-        'display_count' => $snapshot['display_count'] ?? $snapshot['people_estimate'],  // Korrigierter Wert
-        'counter_raw' => $snapshot['counter_raw'] ?? null,  // Debugging
+        'people_estimate' => (int)$snapshot['people_estimate'],  // Hauptwert: Korrigiert (display_count)
+        'counter_raw' => (int)($snapshot['counter_raw'] ?? 0),  // Rohwert vom Arduino (Debug)
+        'display_count' => (int)($snapshot['display_count'] ?? $snapshot['people_estimate']),  // Redundant, aber für Abwärtskompatibilität
         'drift_corrected' => (bool)($snapshot['drift_corrected'] ?? false),
         'scale_applied' => (bool)($snapshot['scale_applied'] ?? false),
         'noise_db' => $snapshot['noise_db'],

@@ -53,7 +53,7 @@ date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 // ========== ZEITFENSTER-KONFIGURATION ==========
 // Snapshots nur in diesem Zeitfenster erstellen
 $ACTIVE_START_TIME = '11:00';  // Ab 11:00 Uhr
-$ACTIVE_END_TIME = '15:00';    // Bis 15:00 Uhr (nicht inklusiv)
+$ACTIVE_END_TIME = '17:00';    // Bis 17:00 Uhr (nicht inklusiv)
 
 // Aktuelle Zeit prüfen
 $currentTime = date('H:i');
@@ -129,8 +129,7 @@ try {
             logMessage("  → Kein Counter-State vorhanden, verwende Fallback");
         }
         
-        // peopleEstimate ist jetzt display_count (korrigierter Wert)
-        $peopleEstimate = $displayCount;
+        logMessage("  → Verwende für Snapshot: people_estimate={$displayCount} (korrigierter Wert!)");
         
         // 2. Fallback auf Arduino Live-Daten (nur wenn counter_state fehlt)
         $arduinoAvailable = false;
@@ -154,9 +153,10 @@ try {
                     if ($arduinoResponse && $httpCode == 200) {
                         $arduinoData = json_decode($arduinoResponse, true);
                         if ($arduinoData && isset($arduinoData['display_count']) && $arduinoData['has_data']) {
-                            $peopleEstimate = max(0, (int)$arduinoData['display_count']);
+                            $counterRaw = max(0, (int)($arduinoData['count'] ?? 0));
+                            $displayCount = max(0, (int)$arduinoData['display_count']);
                             $arduinoAvailable = true;
-                            logMessage("  → Personen (Arduino Fallback): {$peopleEstimate}");
+                            logMessage("  → Personen (Arduino Fallback): counter_raw={$counterRaw}, display_count={$displayCount}");
                         } else {
                             logMessage("  → Arduino: Keine Daten verfügbar (has_data=false)");
                         }
@@ -171,15 +171,16 @@ try {
             }
         }
         
-        // Fallback: Flow-Events nur wenn Arduino NICHT verfügbar ist
-        if (!$arduinoAvailable) {
+        // Fallback: Flow-Events nur wenn Arduino NICHT verfügbar ist UND kein counter_state
+        if (!$arduinoAvailable && !$counterState) {
             $queryNet = "SELECT net_people FROM v_people_net_today WHERE space_id = :space_id";
             $stmtNet = $db->prepare($queryNet);
             $stmtNet->bindParam(':space_id', $spaceId);
             $stmtNet->execute();
             $netResult = $stmtNet->fetch(PDO::FETCH_ASSOC);
-            $peopleEstimate = $netResult ? max(0, (int)$netResult['net_people']) : 0;
-            logMessage("  → Personen (Fallback Flow-Events): {$peopleEstimate}");
+            $counterRaw = $netResult ? max(0, (int)$netResult['net_people']) : 0;
+            $displayCount = $counterRaw;  // Keine Skalierung bei Fallback
+            logMessage("  → Personen (Fallback Flow-Events): counter_raw={$counterRaw}, display_count={$displayCount}");
         }
         
         // 2. Aktuelle Lautstärke (letzte Messung vom Mikrofon)
@@ -220,21 +221,22 @@ try {
         
         logMessage("  → Schwellenwerte: Personen LOW<{$peopleLevels['low']}, MEDIUM<{$peopleLevels['medium']}, Noise LOW<{$noiseLevels['medium']}dB, HIGH>={$noiseLevels['high']}dB");
         
-        // 5. Level berechnen (nur basierend auf Personenzahl / Flow)
+        // 5. Level berechnen (basierend auf display_count = korrigierter Wert!)
         $level = 'LOW';
         
-        if ($peopleEstimate >= $peopleLevels['medium']) {
+        if ($displayCount >= $peopleLevels['medium']) {
             $level = 'HIGH';
-        } elseif ($peopleEstimate >= $peopleLevels['low']) {
+        } elseif ($displayCount >= $peopleLevels['low']) {
             $level = 'MEDIUM';
         }
         
-        logMessage("  → Berechnetes Level: {$level}");
+        logMessage("  → Berechnetes Level: {$level} (basierend auf display_count={$displayCount})");
         
         // 6. Methode bestimmen (Auslastung basiert nur auf Flow)
         $method = 'FLOW_ONLY';
         
         // 7. Snapshot speichern (MIT NEUEN FELDERN!)
+        // WICHTIG: people_estimate = display_count (korrigierter Wert für Dashboard!)
         $queryInsert = "INSERT INTO occupancy_snapshot 
                         (space_id, ts, people_estimate, level, noise_db, method, 
                          counter_raw, display_count, drift_corrected, scale_applied)
@@ -244,7 +246,7 @@ try {
         
         $stmtInsert = $db->prepare($queryInsert);
         $stmtInsert->bindParam(':space_id', $spaceId);
-        $stmtInsert->bindParam(':people', $peopleEstimate);
+        $stmtInsert->bindParam(':people', $displayCount, PDO::PARAM_INT);  // ← display_count statt peopleEstimate!
         $stmtInsert->bindParam(':level', $level);
         $stmtInsert->bindValue(':noise', $noiseDelta, PDO::PARAM_STR);
         $stmtInsert->bindParam(':method', $method);
