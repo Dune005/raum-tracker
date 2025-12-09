@@ -16,9 +16,9 @@ const char* deviceID = "770e8400-e29b-41d4-a716-446655440002";
 const char* sensorID = "550e8400-e29b-41d4-a716-446655440003";
 
 // ===== I2S INMP441 KONFIGURATION =====
-#define I2S_WS   12   // GPIO12 - Left/Right Clock (LRCLK)
-#define I2S_SD   11   // GPIO11 - Serial Data (DOUT)
-#define I2S_SCK  10   // GPIO10 - Bit Clock (BCLK)
+#define I2S_WS  4   // Word Select (L/RCLK)
+#define I2S_SD  5   // Serial Data (DOUT)
+#define I2S_SCK 6   // Bit Clock (BCLK)
 #define I2S_PORT I2S_NUM_0
 
 #define SAMPLE_RATE 16000
@@ -40,7 +40,7 @@ int soundPercentage = 0;
 // ===== INMP441 KALIBRIERUNG =====
 const float QUIET_ROOM_DB = 30.0;
 const float LOUD_ROOM_DB = 90.0;
-const float GAIN_FACTOR = 3.5;
+const float GAIN_FACTOR = 5;
 bool isCalibrated = false;
 float baselineNoise = 0.0;
 float lastRawValue = 0;
