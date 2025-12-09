@@ -36,8 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ===== BOARD 1: Lichtschranken (sendet count + direction) =====
     if (isset($_POST['count'])) {
         $counterRaw = intval($_POST['count']);
+        $direction = isset($_POST['direction']) ? $_POST['direction'] : 'IDLE';
+        
         $data['count'] = $counterRaw;
-        $data['direction'] = isset($_POST['direction']) ? $_POST['direction'] : 'IDLE';
+        $data['direction'] = $direction;
         $data['last_count_update'] = time();
         $data['timestamp'] = $timestamp;
         $updated = true;
@@ -49,6 +51,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             // Config laden
             $driftConfig = $driftCorrector->getDriftConfig($SPACE_ID);
+            
+            // **NEU: Inkrementiere/Dekrementiere Counter basierend auf Direction**
+            if ($direction === 'IN') {
+                $driftCorrector->incrementCounter($SPACE_ID, 1);
+            } elseif ($direction === 'OUT') {
+                // OUT-Events mit Multiplikator gewichten
+                $driftCorrector->decrementCounter($SPACE_ID, $driftConfig['out_event_multiplier']);
+            }
+            
+            // Counter-State neu laden nach Update
+            $counterState = $driftCorrector->getCounterState($SPACE_ID);
+            $counterRaw = $counterState ? (int)$counterState['counter_raw'] : $counterRaw;
             
             // Prüfe ob Drift-Korrektur notwendig
             $needsDriftCorrection = $driftCorrector->shouldCorrectDrift($SPACE_ID, $counterRaw, $driftConfig);

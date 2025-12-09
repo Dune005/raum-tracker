@@ -53,7 +53,7 @@ date_default_timezone_set($_ENV['TIMEZONE'] ?? 'Europe/Zurich');
 // ========== ZEITFENSTER-KONFIGURATION ==========
 // Snapshots nur in diesem Zeitfenster erstellen
 $ACTIVE_START_TIME = '11:00';  // Ab 11:00 Uhr
-$ACTIVE_END_TIME = '17:00';    // Bis 17:00 Uhr (nicht inklusiv)
+$ACTIVE_END_TIME = '15:00';    // Bis 15:00 Uhr (nicht inklusiv)
 
 // Aktuelle Zeit prüfen
 $currentTime = date('H:i');

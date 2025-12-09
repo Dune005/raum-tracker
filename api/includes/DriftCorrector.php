@@ -48,8 +48,9 @@ class DriftCorrector {
             'drift_max' => 7,
             'drift_window_minutes' => 30,
             'min_out_events_for_reset' => 2,
-            'scale_threshold' => 10,
-            'scale_factor' => 2.0,
+            'scale_threshold' => 15,    // Ab wann Skalierung aktiviert wird
+            'scale_factor' => 2,      // Faktor für Skalierung
+            'out_event_multiplier' => 1.3,  // OUT-Events werden stärker gewichtet (z.B. 1.3x)
             'max_capacity' => 60,
             'min_correction_interval_minutes' => 5
         ];
@@ -197,6 +198,53 @@ class DriftCorrector {
         
         $stmt = $this->db->prepare($query);
         $stmt->bindParam(':space_id', $spaceId);
+        return $stmt->execute();
+    }
+    
+    /**
+     * Inkrementiere Counter (IN-Event)
+     * 
+     * @param string $spaceId UUID des Space
+     * @param int $amount Anzahl Personen (Standard: 1)
+     * @return bool True bei Erfolg
+     */
+    public function incrementCounter($spaceId, $amount = 1) {
+        $query = "UPDATE counter_state 
+                  SET counter_raw = counter_raw + :amount,
+                      in_events_today = in_events_today + 1,
+                      last_in_event = NOW(),
+                      last_update = NOW()
+                  WHERE space_id = :space_id";
+        
+        $stmt = $this->db->prepare($query);
+        $stmt->bindParam(':space_id', $spaceId);
+        $stmt->bindParam(':amount', $amount, PDO::PARAM_INT);
+        
+        return $stmt->execute();
+    }
+    
+    /**
+     * Dekrementiere Counter (OUT-Event) mit Multiplikator
+     * 
+     * @param string $spaceId UUID des Space
+     * @param float $outMultiplier Gewichtungsfaktor für OUT-Events
+     * @return bool True bei Erfolg
+     */
+    public function decrementCounter($spaceId, $outMultiplier = 1.0) {
+        // Berechne gewichteten Abzug (z.B. 1.3 statt 1)
+        $amount = round($outMultiplier);
+        
+        $query = "UPDATE counter_state 
+                  SET counter_raw = GREATEST(0, counter_raw - :amount),
+                      out_events_today = out_events_today + 1,
+                      last_out_event = NOW(),
+                      last_update = NOW()
+                  WHERE space_id = :space_id";
+        
+        $stmt = $this->db->prepare($query);
+        $stmt->bindParam(':space_id', $spaceId);
+        $stmt->bindParam(':amount', $amount, PDO::PARAM_INT);
+        
         return $stmt->execute();
     }
     
