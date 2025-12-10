@@ -33,6 +33,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $timestamp = date('Y-m-d H:i:s');
     $updated = false;
     
+    // ===== DEVICE RESET: Arduino-Neustart erkannt =====
+    if (isset($_POST['device_reset']) && $_POST['device_reset'] === 'true') {
+        try {
+            $db = Database::getInstance()->getConnection();
+            
+            // Prüfe aktuellen Wert VOR Reset
+            $queryCheck = "SELECT counter_raw, display_count FROM counter_state WHERE space_id = :space_id";
+            $stmtCheck = $db->prepare($queryCheck);
+            $stmtCheck->bindParam(':space_id', $SPACE_ID);
+            $stmtCheck->execute();
+            $oldState = $stmtCheck->fetch(PDO::FETCH_ASSOC);
+            
+            // Reset durchführen
+            $query = "UPDATE counter_state 
+                      SET counter_raw = 0, 
+                          display_count = 0,
+                          last_update = NOW()
+                      WHERE space_id = :space_id";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':space_id', $SPACE_ID);
+            $success = $stmt->execute();
+            $rowsAffected = $stmt->rowCount();
+            
+            // Auch counter_data.json zurücksetzen
+            $data['count'] = 0;
+            $data['display_count'] = 0;
+            $data['direction'] = 'RESET';
+            $data['last_count_update'] = time();
+            $data['last_update'] = time();
+            $data['timestamp'] = $timestamp;
+            $data['drift_corrected'] = false;
+            
+            // JSON-Datei aktualisieren
+            file_put_contents($dataFile, json_encode($data));
+            
+            error_log("Arduino-Reset erkannt - Counter-State zurückgesetzt für Space: $SPACE_ID");
+            error_log("  Alte Werte: counter_raw=" . ($oldState['counter_raw'] ?? 'N/A') . ", display_count=" . ($oldState['display_count'] ?? 'N/A'));
+            error_log("  SQL-Update: " . ($success ? "erfolgreich" : "fehlgeschlagen") . ", Rows affected: " . $rowsAffected);
+            
+            // Lock freigeben
+            flock($lockFile, LOCK_UN);
+            fclose($lockFile);
+            
+            echo json_encode([
+                'status' => 'success',
+                'message' => 'Counter reset after device restart',
+                'count' => 0,
+                'display_count' => 0,
+                'drift_corrected' => false
+            ]);
+            exit;
+        } catch (Exception $e) {
+            error_log("Fehler beim Arduino-Reset: " . $e->getMessage());
+        }
+    }
+    
     // ===== BOARD 1: Lichtschranken (sendet count + direction) =====
     if (isset($_POST['count'])) {
         $counterRaw = intval($_POST['count']);

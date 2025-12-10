@@ -60,8 +60,8 @@ const int uploadInterval = 500;
 const int heartbeatInterval = 300000;
 const int triggerThreshold1 = 950;
 const int triggerThreshold2 = 950;
-const int triggerThresholdMiddle = 950;
-const unsigned long maxSequenceTime = 1000;
+const int triggerThresholdMiddle = 150;  // VL6180X max. 200mm!
+const unsigned long maxSequenceTime = 1000;  // Reduziert für weniger Fehlauslösungen
 
 enum DirectionState { IDLE, POSSIBLE_A, MIDDLE_CONFIRM, POSSIBLE_B };
 DirectionState state = IDLE;
@@ -69,6 +69,8 @@ DirectionState state = IDLE;
 bool pendingSend = false;
 String pendingDirection = "";
 unsigned long pendingDuration = 0;
+
+bool resetSent = false;  // Flag: Reset-Signal wurde gesendet
 
 // ===== RESET STATE MIT DEBOUNCE (KRITISCH FÜR WIFI-STACK!) =====
 void resetState() {
@@ -266,6 +268,43 @@ void sendHeartbeatAsync() {
   delete client;
 }
 
+void sendResetSignal() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("❌ Reset: Keine WiFi-Verbindung");
+    return;
+  }
+  
+  Serial.print("🔄 Sende Reset-Signal an Server... ");
+  
+  WiFiClientSecure *client = new WiFiClientSecure;
+  if (!client) {
+    Serial.println("❌ Client-Erstellung fehlgeschlagen");
+    return;
+  }
+  
+  client->setInsecure();
+  
+  HTTPClient http;
+  http.begin(*client, serverURL);
+  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+  http.setTimeout(2000);
+  
+  String postData = "count=0&direction=RESET&device_reset=true";
+  
+  unsigned long startTime = millis();
+  int httpResponseCode = http.POST(postData);
+  unsigned long duration = millis() - startTime;
+  
+  if (httpResponseCode > 0) {
+    Serial.println("✅ " + String(httpResponseCode) + " (" + String(duration) + "ms)");
+  } else {
+    Serial.println("❌ Fehler: " + String(httpResponseCode));
+  }
+  
+  http.end();
+  delete client;
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
@@ -286,6 +325,8 @@ void setup() {
   Wire.setClock(400000);
   
   connectWiFi();
+  
+  Serial.println("ℹ️ Reset-Signal wird in loop() gesendet (wenn WiFi stabil)");
   
   configTime(3600, 3600, "pool.ntp.org", "time.nist.gov");
   Serial.println("Warte auf NTP-Zeitsynchronisation...");
@@ -383,6 +424,54 @@ void loop() {
   
   unsigned long currentTime = millis();
   
+  // ===== ZEITFENSTER-BLOCKIERUNG (23:00-06:00 UHR) =====
+  // Verhindert nächtliche Fehlauslösungen durch empfindliche IR-Sensoren
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    int hour = timeinfo.tm_hour;
+    
+    // Debug: Zeige aktuelle Zeit alle 30 Sekunden
+    static unsigned long lastTimeDebug = 0;
+    if (currentTime - lastTimeDebug > 30000) {
+      time_t now = time(nullptr);
+      Serial.println("⏰ Aktuelle Zeit: " + String(hour) + ":" + String(timeinfo.tm_min) + " Uhr (Timestamp: " + String(now) + ")");
+      lastTimeDebug = currentTime;
+    }
+    
+    // NTP muss synchronisiert sein (Timestamp > 01.01.2020)
+    time_t now = time(nullptr);
+    if (now > 1577836800 && (hour >= 23 || hour < 6)) {
+      // Nachts: Nur Heartbeat senden, keine Messungen
+      static unsigned long lastNightHeartbeat = 0;
+      if (currentTime - lastNightHeartbeat > heartbeatInterval) {
+        Serial.println("🌙 Nachtmodus aktiv (" + String(hour) + ":" + String(timeinfo.tm_min) + " Uhr) - Sensoren deaktiviert");
+        sendHeartbeatAsync();
+        lastNightHeartbeat = currentTime;
+      }
+      delay(5000);
+      return;
+    }
+  } else {
+    // Warnung wenn getLocalTime fehlschlägt
+    static unsigned long lastTimeWarning = 0;
+    if (currentTime - lastTimeWarning > 60000) {
+      Serial.println("⚠️ getLocalTime() fehlgeschlagen - Zeitfenster-Blockierung inaktiv");
+      lastTimeWarning = currentTime;
+    }
+  }
+  
+  // ===== RESET-SIGNAL BEIM ERSTEN LOOP (WENN WIFI STABIL) =====
+  if (!resetSent && currentTime > 5000) {
+    Serial.println("\n🔄 WiFi stabil - sende Reset-Signal an Server (3x)...");
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      Serial.print("  Versuch " + String(attempt) + "/3: ");
+      sendResetSignal();
+      delay(1000);
+    }
+    resetSent = true;
+    Serial.println("✅ Reset-Sequenz abgeschlossen\n");
+  }
+  
   // ===== SENSOR-VARIABLEN (werden in den einzelnen Checks befüllt) =====
   uint16_t range1 = 0;
   uint16_t range2 = 0;
@@ -412,11 +501,19 @@ void loop() {
       lastTriggerTime = currentTime;
       Serial.println("→ Sensor A: " + String(range1) + "mm");
     } 
-    else if (state == POSSIBLE_B && A_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
+    else if (state == MIDDLE_CONFIRM && A_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
       unsigned long durationMs = currentTime - lastTriggerTime;
       count--;
       if (count < 0) count = 0;
       Serial.println("\n🚪 AUSGANG (B→M→A) | Count: " + String(count) + " | " + String(durationMs) + "ms");
+      queueSend("OUT", durationMs);
+      resetState();
+    }
+    else if (state == POSSIBLE_B && A_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
+      unsigned long durationMs = currentTime - lastTriggerTime;
+      count--;
+      if (count < 0) count = 0;
+      Serial.println("\n🚪 AUSGANG (B→A direkt) | Count: " + String(count) + " | " + String(durationMs) + "ms");
       queueSend("OUT", durationMs);
       resetState();
     } 
@@ -457,7 +554,7 @@ void loop() {
       Serial.println("\n🚶 EINGANG (A→M→B) | Count: " + String(count) + " | " + String(durationMs) + "ms");
       queueSend("IN", durationMs);
       resetState();
-    } 
+    }
     else if (state == POSSIBLE_A && B_trigger && (currentTime - lastTriggerTime) < maxSequenceTime) {
       unsigned long durationMs = currentTime - lastTriggerTime;
       count++;
@@ -490,4 +587,7 @@ void loop() {
     sendHeartbeatAsync();
     lastHeartbeatTime = currentTime;
   }
+  
+  // Kurze Pause für WiFi-Stack und Sensor-Stabilität
+  delay(50);
 }
