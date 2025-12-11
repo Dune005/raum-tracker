@@ -51,6 +51,7 @@ int count = 0;
 unsigned long lastTriggerTime = 0;
 unsigned long lastUploadTime = 0;
 unsigned long lastHeartbeatTime = 0;
+int lastResetDay = -1;  // Track letzter Reset-Tag (tm_mday)
 
 const int MIN_DETECTION_DISTANCE = 50;
 const int MAX_DETECTION_DISTANCE = 1200;
@@ -305,6 +306,24 @@ void sendResetSignal() {
   delete client;
 }
 
+void performDailyReset() {
+  Serial.println("\n⏰ 8:00 Uhr erreicht - Starte täglichen Reset...");
+  
+  // Lokalen Counter zurücksetzen
+  int oldCount = count;
+  count = 0;
+  Serial.println("  📊 Arduino Counter: " + String(oldCount) + " → 0");
+  
+  // Reset-Signal an Server senden (3x für Sicherheit)
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    Serial.print("  Versuch " + String(attempt) + "/3: ");
+    sendResetSignal();
+    if (attempt < 3) delay(1000);
+  }
+  
+  Serial.println("✅ Täglicher Reset abgeschlossen\n");
+}
+
 void setup() {
   Serial.begin(115200);
   delay(100);
@@ -429,22 +448,32 @@ void loop() {
   struct tm timeinfo;
   if (getLocalTime(&timeinfo)) {
     int hour = timeinfo.tm_hour;
+    int minute = timeinfo.tm_min;
+    int currentDay = timeinfo.tm_mday;
     
     // Debug: Zeige aktuelle Zeit alle 30 Sekunden
     static unsigned long lastTimeDebug = 0;
     if (currentTime - lastTimeDebug > 30000) {
       time_t now = time(nullptr);
-      Serial.println("⏰ Aktuelle Zeit: " + String(hour) + ":" + String(timeinfo.tm_min) + " Uhr (Timestamp: " + String(now) + ")");
+      Serial.println("⏰ Aktuelle Zeit: " + String(hour) + ":" + String(minute) + " Uhr (Tag: " + String(currentDay) + ", Timestamp: " + String(now) + ")");
       lastTimeDebug = currentTime;
     }
     
-    // NTP muss synchronisiert sein (Timestamp > 01.01.2020)
+    // ===== TÄGLICHER RESET UM 8:00 UHR =====
     time_t now = time(nullptr);
+    if (now > 1577836800) {  // NTP synchronisiert
+      if (hour == 8 && minute == 0 && currentDay != lastResetDay) {
+        performDailyReset();
+        lastResetDay = currentDay;  // Markiere Tag als resettet
+      }
+    }
+    
+    // NTP muss synchronisiert sein (Timestamp > 01.01.2020)
     if (now > 1577836800 && (hour >= 23 || hour < 6)) {
       // Nachts: Nur Heartbeat senden, keine Messungen
       static unsigned long lastNightHeartbeat = 0;
       if (currentTime - lastNightHeartbeat > heartbeatInterval) {
-        Serial.println("🌙 Nachtmodus aktiv (" + String(hour) + ":" + String(timeinfo.tm_min) + " Uhr) - Sensoren deaktiviert");
+        Serial.println("🌙 Nachtmodus aktiv (" + String(hour) + ":" + String(minute) + " Uhr) - Sensoren deaktiviert");
         sendHeartbeatAsync();
         lastNightHeartbeat = currentTime;
       }
