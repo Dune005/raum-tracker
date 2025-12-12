@@ -88,8 +88,18 @@ Die ausführliche Beschreibung der Sensorik inkl. Sequenzdiagrammen liegt in [`D
 - [`Dokumentation/Beschreibung_Datenbank.md`](Dokumentation/Beschreibung_Datenbank.md) – Tabellen, Relationen und Beispielabfragen.
 - [`Dokumentation/Beschreibung_Projekt_Raum_Tracker.md`](Dokumentation/Beschreibung_Projekt_Raum_Tracker.md) – Projektkontext, MVP und geplante Phasen.
 - [`db/API_Endpoints_Kompakt.md`](db/API_Endpoints_Kompakt.md) – Kurzübersicht aller Endpunkte mit Beispielpayload.
+- [`Dokumentation/Wie_funktioniert_die_Drift_Korrektur.md`](Dokumentation/Wie_funktioniert_die_Drift_Korrektur.md) – Verständliche Beschreibung der Drift-Korrektur.
 
-## Projektdokumentation
+
+### Technische Anleitungen
+
+- [Anleitungen/Arduino_Datenbank_Integration.md](Anleitungen/Arduino_Datenbank_Integration.md) – Arduino → Live-Dashboard + REST-API (Flow/Sensor/Heartbeat) inkl. Payload-Beispiele und Tests.
+- [Anleitungen/db_relations_visual.md](Anleitungen/db_relations_visual.md) – ER-Diagramm (Mermaid + ASCII) der wichtigsten Tabellen.
+- [Dokumentation/technische_Anleitungen/Drift_Korrektur_Dokumentation.md](Dokumentation/technische_Anleitungen/Drift_Korrektur_Dokumentation.md) – Drift-Korrektur v2.0 mit Skalierung, `counter_state`, Arduino-Sync.
+- [Dokumentation/technische_Anleitungen/Taeglicher_Reset_8Uhr.md](Dokumentation/technische_Anleitungen/Taeglicher_Reset_8Uhr.md) – täglicher Reset (Arduino + update_count.php) um 8:00 Uhr.
+- [Dokumentation/Bilder/raum_tracker_mermaid.jpg](Dokumentation/Bilder/raum_tracker_mermaid.jpg) – gerendertes Mermaid-Diagramm der Systemarchitektur.
+
+### Projektdokumentation
 
 Folgt in Kürze und wird alle projektrelevanten Unterlagen, Entscheidungsgrundlagen und Lessons Learned bündeln.
 
