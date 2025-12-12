@@ -94,7 +94,6 @@ Die ausführliche Beschreibung der Sensorik inkl. Sequenzdiagrammen liegt in [`D
 ### Technische Anleitungen
 
 - [Anleitungen/Arduino_Datenbank_Integration.md](Anleitungen/Arduino_Datenbank_Integration.md) – Arduino → Live-Dashboard + REST-API (Flow/Sensor/Heartbeat) inkl. Payload-Beispiele und Tests.
-- [Anleitungen/db_relations_visual.md](Anleitungen/db_relations_visual.md) – ER-Diagramm (Mermaid + ASCII) der wichtigsten Tabellen.
 - [Dokumentation/technische_Anleitungen/Drift_Korrektur_Dokumentation.md](Dokumentation/technische_Anleitungen/Drift_Korrektur_Dokumentation.md) – Drift-Korrektur v2.0 mit Skalierung, `counter_state`, Arduino-Sync.
 - [Dokumentation/technische_Anleitungen/Taeglicher_Reset_8Uhr.md](Dokumentation/technische_Anleitungen/Taeglicher_Reset_8Uhr.md) – täglicher Reset (Arduino + update_count.php) um 8:00 Uhr.
 - [Dokumentation/Bilder/raum_tracker_mermaid.jpg](Dokumentation/Bilder/raum_tracker_mermaid.jpg) – gerendertes Mermaid-Diagramm der Systemarchitektur.
