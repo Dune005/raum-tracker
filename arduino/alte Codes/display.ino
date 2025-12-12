@@ -12,13 +12,12 @@
 #include "GxEPD2_display_selection_new_style.h"
 
 // ===== WiFi Konfiguration =====
-const char* SSID = "Igloo";
-const char* PASSWORD = "1glooVision";
+const char* SSID = "HLY-77900";
+const char* PASSWORD = "0jgp-42ej-ah8y-hnwz";
 
 // ===== API Konfiguration =====
 // WICHTIG: /occupancy/current ist der korrekte Endpoint (nicht /occupancy)
 const char* apiOccupancyEndpoint = "https://corner.klaus-klebband.ch/api/v1/occupancy/current";
-const char* heartbeatUrl = "https://corner.klaus-klebband.ch/update_count.php";
 
 // space_id aus generate_occupancy_snapshot.php
 const char* space_id = "880e8400-e29b-41d4-a716-446655440001";
@@ -59,10 +58,6 @@ const int QUARTER_HEIGHT = CONTENT_HEIGHT / 2;
 // Update-Variablen
 unsigned long lastUpdateTime = 0;
 const unsigned long UPDATE_INTERVAL = 90000;  // 90 Sekunden
-const unsigned long DISPLAY_HEARTBEAT_INTERVAL = 60000;  // 60 Sekunden
-unsigned long lastDisplayHeartbeat = 0;
-
-void sendDisplayHeartbeat();
 
 void setup() {
   Serial.begin(115200);
@@ -81,9 +76,6 @@ void setup() {
   } else {
     Serial.println("Erste Abfrage fehlgeschlagen");
   }
-
-  // Heartbeat direkt nach dem Start senden, damit der Server sofort einen Timestamp hat
-  sendDisplayHeartbeat();
 }
 
 void loop() {
@@ -99,10 +91,6 @@ void loop() {
     } else {
       Serial.println("ERROR: Fehler beim Abrufen der Live-Daten");
     }
-  }
-
-  if (now - lastDisplayHeartbeat >= DISPLAY_HEARTBEAT_INTERVAL) {
-    sendDisplayHeartbeat();
   }
 
   delay(200);
@@ -280,37 +268,6 @@ bool fetchLiveData() {
 
   Serial.println("✓ Daten erfolgreich geparst");
   return true;
-}
-
-void sendDisplayHeartbeat() {
-  lastDisplayHeartbeat = millis();
-
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("Display heartbeat übersprungen: kein WiFi");
-    return;
-  }
-
-  HTTPClient http;
-  http.begin(heartbeatUrl);
-  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-
-  String payload = "display_ping=1";
-  if (device_id && device_id[0] != '\0') {
-    payload += "&device_id=";
-    payload += device_id;
-  }
-
-  int httpCode = http.POST(payload);
-  if (httpCode > 0) {
-    Serial.print("Display heartbeat gesendet (HTTP ");
-    Serial.print(httpCode);
-    Serial.println(")");
-  } else {
-    Serial.print("Display heartbeat fehlgeschlagen: ");
-    Serial.println(http.errorToString(httpCode));
-  }
-
-  http.end();
 }
 
 // ===== Display Funktionen =====

@@ -16,9 +16,9 @@ const char* deviceID = "770e8400-e29b-41d4-a716-446655440002";
 const char* sensorID = "550e8400-e29b-41d4-a716-446655440003";
 
 // ===== I2S INMP441 KONFIGURATION =====
-#define I2S_WS  4   // Word Select (L/RCLK)
-#define I2S_SD  5   // Serial Data (DOUT)
-#define I2S_SCK 6   // Bit Clock (BCLK)
+#define I2S_WS   12   // GPIO12 - Left/Right Clock (LRCLK)
+#define I2S_SD   11   // GPIO11 - Serial Data (DOUT)
+#define I2S_SCK  10   // GPIO10 - Bit Clock (BCLK)
 #define I2S_PORT I2S_NUM_0
 
 #define SAMPLE_RATE 16000
@@ -37,10 +37,18 @@ const int heartbeatInterval = 300000;
 float currentSoundLevel = 30.0;
 int soundPercentage = 0;
 
+// ===== DEBUG SIMULATION KONFIGURATION =====
+bool USE_SIMULATION = true;  // ← DEBUG: true = Simulation, false = echtes Mikrofon
+unsigned long simulationStartTime = 0;
+const float SIM_MIN_DB = 30.0;
+const float SIM_MAX_DB = 80.0;
+const unsigned long SIM_RAMP_UP_TIME = 120000;  // 2 Minuten = 120000 ms
+const unsigned long SIM_HOLD_TIME = 60000;      // 1 Minute = 60000 ms
+
 // ===== INMP441 KALIBRIERUNG =====
 const float QUIET_ROOM_DB = 30.0;
 const float LOUD_ROOM_DB = 90.0;
-const float GAIN_FACTOR = 5;
+const float GAIN_FACTOR = 3.5;
 bool isCalibrated = false;
 float baselineNoise = 0.0;
 float lastRawValue = 0;
@@ -49,7 +57,7 @@ void setup() {
   Serial.begin(115200);
   delay(100);
   
-  Serial.println("\n=== ESP32-C6 Sound Monitor (INMP441 Mikrofon) ===\n");
+  Serial.println("\n=== ESP32-C6 Sound Monitor (DEBUG SIMULATION MODUS) ===\n");
   
   connectWiFi();
   
@@ -65,11 +73,16 @@ void setup() {
   }
   Serial.println(now > 8 * 3600 * 24 ? "\n✅ Zeit OK\n" : "\n⚠️ Zeit Fehler\n");
   
-  if (setupI2S()) {
-    Serial.println("✅ I2S INMP441 Mikrofon initialisiert\n");
+  if (!USE_SIMULATION) {
+    if (setupI2S()) {
+      Serial.println("✅ I2S INMP441 Mikrofon initialisiert\n");
+    } else {
+      Serial.println("❌ FEHLER: INMP441 Mikrofon konnte nicht initialisiert werden!");
+      while(1) delay(1000);
+    }
   } else {
-    Serial.println("❌ FEHLER: INMP441 Mikrofon konnte nicht initialisiert werden!");
-    while(1) delay(1000);
+    Serial.println("🔧 DEBUG: Mikrofon SIMULATION aktiviert\n");
+    simulationStartTime = millis();
   }
   
   if (WiFi.status() == WL_CONNECTED) {
@@ -98,13 +111,18 @@ void setup() {
     Serial.println("📡 OTA bereit\n");
   }
   
-  Serial.println("Kalibriere INMP441... (5 Sekunden ruhig bleiben)");
-  delay(2000);
-  calibrateMicrophone();
+  if (!USE_SIMULATION) {
+    Serial.println("Kalibriere INMP441... (5 Sekunden ruhig bleiben)");
+    delay(2000);
+    calibrateMicrophone();
+  } else {
+    isCalibrated = true;
+    baselineNoise = 30000;
+  }
   
   Serial.println("\n✅ Sound Monitor bereit!");
-  Serial.printf("Gain-Faktor: %.1f | Bereich: %.0f-%.0f dB\n\n", 
-                GAIN_FACTOR, QUIET_ROOM_DB, LOUD_ROOM_DB);
+  Serial.printf("Gain-Faktor: %.1f | Bereich: %.0f-%.0f dB | SIM: %s\n\n", 
+                GAIN_FACTOR, QUIET_ROOM_DB, LOUD_ROOM_DB, USE_SIMULATION ? "JA" : "NEIN");
 }
 
 void loop() {
@@ -126,7 +144,9 @@ void loop() {
     Serial.print(currentSoundLevel, 1);
     Serial.print(" dB → ");
     Serial.print(soundPercentage);
-    Serial.print("% (Raw: ");
+    Serial.print("% (");
+    Serial.print(USE_SIMULATION ? "SIM" : "Raw");
+    Serial.print(": ");
     Serial.print(lastRawValue, 0);
     Serial.println(")");
     
@@ -288,7 +308,39 @@ void sendHeartbeat() {
   delete client;
 }
 
-// ===== I2S SETUP FÜR INMP441 =====
+// ===== SIMULATION MODELS =====
+float getSimulatedSoundLevel() {
+  if (simulationStartTime == 0) simulationStartTime = millis();
+  
+  unsigned long elapsed = millis() - simulationStartTime;
+  unsigned long cycleTime = SIM_RAMP_UP_TIME + SIM_HOLD_TIME + SIM_RAMP_UP_TIME; // 2min hoch + 1min halten + 2min runter
+  
+  // Zyklus wiederholen alle 5 Minuten
+  elapsed = elapsed % cycleTime;
+  
+  float level;
+  
+  if (elapsed < SIM_RAMP_UP_TIME) {
+    // Phase 1: 2 Minuten hoch von 30 auf 80 dB
+    level = SIM_MIN_DB + (SIM_MAX_DB - SIM_MIN_DB) * (float)elapsed / SIM_RAMP_UP_TIME;
+  } else if (elapsed < SIM_RAMP_UP_TIME + SIM_HOLD_TIME) {
+    // Phase 2: 1 Minute bei 80 dB halten
+    level = SIM_MAX_DB;
+  } else {
+    // Phase 3: 2 Minuten runter von 80 auf 30 dB
+    unsigned long rampDownElapsed = elapsed - (SIM_RAMP_UP_TIME + SIM_HOLD_TIME);
+    level = SIM_MAX_DB - (SIM_MAX_DB - SIM_MIN_DB) * (float)rampDownElapsed / SIM_RAMP_UP_TIME;
+  }
+  
+  // Kleine Variation (±2dB) für Realismus
+  level += (random(-20, 21) / 10.0);
+  if (level < SIM_MIN_DB) level = SIM_MIN_DB;
+  if (level > SIM_MAX_DB) level = SIM_MAX_DB;
+  
+  return level;
+}
+
+// ===== I2S SETUP FÜR INMP441 (nur wenn nicht simuliert) =====
 bool setupI2S() {
   const i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
@@ -297,7 +349,7 @@ bool setupI2S() {
     .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,  // ← INMP441 ist mono (links)
     .communication_format = i2s_comm_format_t(I2S_COMM_FORMAT_I2S | I2S_COMM_FORMAT_I2S_MSB),
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count = 4,           // ← Weniger Puffer für INMP441
+    .dma_buf_count = 4,            // ← Weniger Puffer für INMP441
     .dma_buf_len = SAMPLE_BUFFER_SIZE,
     .use_apll = false,
     .tx_desc_auto_clear = false,
@@ -374,7 +426,7 @@ float getRawAudioLevel() {
   
   // ← INMP441: Kürzere Timeout für schnellere Messung
   esp_err_t result = i2s_read(I2S_PORT, samples, sizeof(samples), 
-                              &bytes_read, pdMS_TO_TICKS(100));
+                            &bytes_read, pdMS_TO_TICKS(100));
   
   if (result != ESP_OK || bytes_read == 0) {
     return lastRawValue;
@@ -404,25 +456,40 @@ float getRawAudioLevel() {
 }
 
 float readSoundLevel() {
-  if (!isCalibrated) {
-    return QUIET_ROOM_DB;
+  float db;
+  
+  if (USE_SIMULATION) {
+    // DEBUG: Simulierte Werte (30→80dB in 2min, 1min halten, 2min runter)
+    db = getSimulatedSoundLevel();
+    lastRawValue = (db - QUIET_ROOM_DB) * 1000;  // Fake Raw-Wert für Serial-Ausgabe
+  } else {
+    // Original Mikrofon-Logik
+    if (!isCalibrated) {
+      return QUIET_ROOM_DB;
+    }
+    
+    float rawLevel = getRawAudioLevel();
+    rawLevel = rawLevel * GAIN_FACTOR;
+    
+    float ratio = rawLevel / (baselineNoise * GAIN_FACTOR);
+    
+    db = QUIET_ROOM_DB;
+    if (ratio > 1.0) {
+      db = QUIET_ROOM_DB + (20.0 * log10(ratio));
+    }
+    
+    if (db < QUIET_ROOM_DB) db = QUIET_ROOM_DB;
+    if (db > LOUD_ROOM_DB) db = LOUD_ROOM_DB;
+    
+    float smoothed = (currentSoundLevel * 0.6) + (db * 0.4);
+    db = smoothed;
   }
   
-  float rawLevel = getRawAudioLevel();
-  rawLevel = rawLevel * GAIN_FACTOR;
-  
-  float ratio = rawLevel / (baselineNoise * GAIN_FACTOR);
-  
-  float db = QUIET_ROOM_DB;
-  if (ratio > 1.0) {
-    db = QUIET_ROOM_DB + (20.0 * log10(ratio));
-  }
-  
-  if (db < QUIET_ROOM_DB) db = QUIET_ROOM_DB;
-  if (db > LOUD_ROOM_DB) db = LOUD_ROOM_DB;
-  
+  // Finale Glättung (für beide Modi)
   float smoothed = (currentSoundLevel * 0.6) + (db * 0.4);
-  return smoothed;
+  currentSoundLevel = smoothed;
+  
+  return currentSoundLevel;
 }
 
 int soundLevelToPercentage(float dbLevel) {

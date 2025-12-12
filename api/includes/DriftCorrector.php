@@ -45,9 +45,9 @@ class DriftCorrector {
         
         // Fallback: Standard-Werte
         return [
-            'drift_max' => 7,
-            'drift_window_minutes' => 30,
-            'min_out_events_for_reset' => 2,
+            'drift_max' => 7,          // Maximaler counter_raw Wert für Drift-Erkennung
+            'drift_window_minutes' => 30,   // Zeitfenster für Event-Analyse
+            'min_out_events_for_reset' => 2,    // Minimale OUT-Events für Drift-Reset
             'scale_threshold' => 15,    // Ab wann Skalierung aktiviert wird
             'scale_factor' => 2,      // Faktor für Skalierung
             'out_event_multiplier' => 1.3,  // OUT-Events werden stärker gewichtet (z.B. 1.3x)
