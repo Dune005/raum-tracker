@@ -5,6 +5,8 @@
  */
 
 class Database {
+    private static $instance = null;  // ← NEU: Singleton-Instance
+    
     private $host;
     private $db_name;
     private $username;
@@ -78,5 +80,16 @@ class Database {
             return $this->connect();
         }
         return $this->conn;
+    }
+    
+    /**
+     * Singleton-Pattern: Gibt immer dieselbe Database-Instanz zurück
+     * Wird von DriftCorrector und update_count.php benötigt
+     */
+    public static function getInstance() {
+        if (self::$instance === null) {
+            self::$instance = new Database();
+        }
+        return self::$instance;
     }
 }

@@ -23,8 +23,9 @@ try {
         Response::notFound('Space not found');
     }
     
-    // Hole neuesten Occupancy Snapshot
-    $queryOcc = "SELECT ts, people_estimate, level, noise_db, motion_count, method, window_seconds 
+    // Hole neuesten Occupancy Snapshot (MIT DRIFT-KORREKTUR-DATEN!)
+    $queryOcc = "SELECT ts, people_estimate, level, noise_db, motion_count, method, window_seconds,
+                        counter_raw, display_count, drift_corrected, scale_applied
                  FROM occupancy_snapshot 
                  WHERE space_id = :space_id 
                  ORDER BY ts DESC 
@@ -71,6 +72,10 @@ try {
             'timestamp' => date('Y-m-d H:i:s'),
             'level' => 'LOW',
             'people_estimate' => null,
+            'display_count' => null,
+            'counter_raw' => null,
+            'drift_corrected' => false,
+            'scale_applied' => false,
             'noise_db' => null,
             'motion_count' => null,
             'method' => 'NONE',
@@ -85,7 +90,11 @@ try {
         'space_name' => $space['name'],
         'timestamp' => $snapshot['ts'],
         'level' => $snapshot['level'],
-        'people_estimate' => $snapshot['people_estimate'],
+        'people_estimate' => (int)$snapshot['people_estimate'],  // Hauptwert: Korrigiert (display_count)
+        'counter_raw' => (int)($snapshot['counter_raw'] ?? 0),  // Rohwert vom Arduino (Debug)
+        'display_count' => (int)($snapshot['display_count'] ?? $snapshot['people_estimate']),  // Redundant, aber für Abwärtskompatibilität
+        'drift_corrected' => (bool)($snapshot['drift_corrected'] ?? false),
+        'scale_applied' => (bool)($snapshot['scale_applied'] ?? false),
         'noise_db' => $snapshot['noise_db'],
         'motion_count' => $snapshot['motion_count'],
         'method' => $snapshot['method'],

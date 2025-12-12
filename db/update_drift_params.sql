@@ -34,7 +34,7 @@ SET @scale_threshold = 15;
 -- Empfohlen: 1.2 - 1.5
 -- Beispiel: 1 OUT-Event zieht 1.3 vom Counter ab statt nur 1
 -- ⚠️ WICHTIG: Dieser Wert hilft, den positiven Drift zu reduzieren!
-SET @out_event_multiplier = 2.0;
+SET @out_event_multiplier = 1.3;
 
 -- drift_max: Maximaler Counter-Wert für Drift-Erkennung
 -- Aktuell: 7
