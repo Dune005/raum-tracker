@@ -39,8 +39,8 @@ int soundPercentage = 0;
 
 // ===== INMP441 KALIBRIERUNG =====
 const float QUIET_ROOM_DB = 30.0;
-const float LOUD_ROOM_DB = 90.0;
-const float GAIN_FACTOR = 5;
+const float LOUD_ROOM_DB = 45.0;
+const float GAIN_FACTOR = 7;
 bool isCalibrated = false;
 float baselineNoise = 0.0;
 float lastRawValue = 0;
