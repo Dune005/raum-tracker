@@ -61,7 +61,7 @@ const int uploadInterval = 500;
 const int heartbeatInterval = 300000;
 const int triggerThreshold1 = 950;
 const int triggerThreshold2 = 950;
-const int triggerThresholdMiddle = 150;  // VL6180X max. 200mm!
+const int triggerThresholdMiddle = 150;  // VL6180X max. 150mm!
 const unsigned long maxSequenceTime = 1000;  // Reduziert für weniger Fehlauslösungen
 
 enum DirectionState { IDLE, POSSIBLE_A, MIDDLE_CONFIRM, POSSIBLE_B };

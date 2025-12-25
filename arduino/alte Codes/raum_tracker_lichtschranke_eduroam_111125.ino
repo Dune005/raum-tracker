@@ -51,7 +51,7 @@ const int uploadInterval = 3000;    // ms - Periodisches Senden (Live-Dashboard)
 const int heartbeatInterval = 300000; // ms - Heartbeat alle 5 Minuten
 const int triggerThreshold1 = 400;  // mm - Sensor A (eingangsnah)
 const int triggerThreshold2 = 400;  // mm - Sensor B (weiter gefasst)
-const unsigned long maxSequenceTime = 600; // ms - Zeitfenster für Sequenz
+const unsigned long maxSequenceTime = 600; // ms - Zeitfenster für Sequenz, RAUSNEHMEN/ANPASSEN
 
 // ==== State Machine ====
 enum DirectionState { IDLE, POSSIBLE_A, POSSIBLE_B };
