@@ -18,8 +18,6 @@
 
 ## Systemaufbau auf einen Blick
 
-![Raum-Tracker Banner](./Dokumentation/Bilder/systemaufbau.jpg)
-
 ## Hauptkomponenten
 
 ### 1. Lichtschranken-Gate
@@ -89,6 +87,9 @@ Die ausführliche Beschreibung der Sensorik inkl. Sequenzdiagrammen liegt in [`D
 - [`Dokumentation/Beschreibung_Projekt_Raum_Tracker.md`](Dokumentation/Beschreibung_Projekt_Raum_Tracker.md) – Projektkontext, MVP und geplante Phasen.
 - [`db/API_Endpoints_Kompakt.md`](db/API_Endpoints_Kompakt.md) – Kurzübersicht aller Endpunkte mit Beispielpayload.
 - [`Dokumentation/Wie_funktioniert_die_Drift_Korrektur.md`](Dokumentation/Wie_funktioniert_die_Drift_Korrektur.md) – Verständliche Beschreibung der Drift-Korrektur.
+- [`Dokumentation/steckplaene/Steckplaene.md`](Dokumentation/steckplaene/Steckplaene.md) – Steckplaene unserer Controller.
+- [`Dokumentation/prozess`](Dokumentation/prozess) – Unser Prozess in Bildern.
+
 
 
 ### Technische Anleitungen
@@ -100,8 +101,7 @@ Die ausführliche Beschreibung der Sensorik inkl. Sequenzdiagrammen liegt in [`D
 
 ### Projektdokumentation
 
-Folgt in Kürze und wird alle projektrelevanten Unterlagen, Entscheidungsgrundlagen und Lessons Learned bündeln.
-
+- [Dokumentation/dokumentation_IM5.md](Dokumentation/dokumentation_IM5.md) – schriftliche Dokumentation des Projekts.
 ---
 
-**Stand:** 10. Dezember 2025 · **Version:** 2.1 · **Kontakt:** IM5 Projektteam «Raum-Tracker»
+**Stand:** 26. Dezember 2025
