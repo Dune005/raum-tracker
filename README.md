@@ -34,7 +34,7 @@
 - Die API stellt u. a. `GET /api/v1/occupancy/current`, `GET /api/v1/occupancy/history` und Statistik-Endpunkte bereit.
 
 ### 4. Visualisierung
-- Ein Waveshare 2.36" 4-Farben-E-Ink zieht sich jede Minute den aktuellen Snapshot (`/api/v1/occupancy/current`) und zeigt drei Quadranten: Auslastung des Raumes mit ungefährer Personenanzahl, Lautstärke und die Zeit der Messung.
+- Ein Waveshare 4.2 Zoll 4-Farben-E-Ink zieht sich jede Minute den aktuellen Snapshot (`/api/v1/occupancy/current`) und zeigt drei Quadranten: Auslastung des Raumes mit ungefährer Personenanzahl, Lautstärke und die Zeit der Messung.
 - Außerhalb des Betriebsfensters (10–14 Uhr) zeigt das Display klar, dass keine Live-Daten erhoben werden.
 
 ## Datenfluss – was passiert, wenn jemand den Raum betritt?
@@ -68,7 +68,7 @@ Die ausführliche Beschreibung der Sensorik inkl. Sequenzdiagrammen liegt in [`D
 - **Backend:** Vanilla-PHP 8.x, MySQL, PDO, Cronjobs
 - **API:** RESTful JSON mit leichter Auth-Schicht (API-Keys + Cron-Token)
 - **Hardware:** Drei ToF-Lichtschranken (VL53L0X & VL6180X), INMP441 I2S-Mikrofon, mehrere ESP32-C6-N8
-- **Visualisierung:** Waveshare 2.36" E-Ink (4 Farben) plus Web-Dashboard (HTML/CSS/JS ohne Frameworks)
+- **Visualisierung:** Waveshare 4.2 Zoll E-Ink (4 Farben) plus Web-Dashboard (HTML/CSS/JS ohne Frameworks)
 - **Netzwerk:** alle Controller verwenden das "MMP_MediaApp" WLAN.
 - **Edge/Infra:** Raspberry Pi als Brücke zwischen Campus-Netz und Sensorik, hostet Cronjob für Snapshot-Generierung.
 
