@@ -1,7 +1,7 @@
 ![Raum-Tracker Banner](./Dokumentation/Bilder/banner_raumtracker.jpg)
 # 🏢 Raum-Tracker – Aufenthaltsraum IM5
 
-Wir machen sichtbar, wie belebt der Aufenthaltsraum IM5 gerade ist – in Echtzeit, anonym und auf einen Blick. </br>
+> Wir machen sichtbar, wie belebt der Aufenthaltsraum IM5 gerade ist – in Echtzeit, anonym und auf einen Blick. </br>
 
 **Hier gehts zum Entwickler-Dashboard:** **https://corner.klaus-klebband.ch/**
 
@@ -106,4 +106,4 @@ Die ausführliche Beschreibung der Sensorik inkl. Sequenzdiagrammen liegt in [`D
 - [Dokumentation/dokumentation_IM5.md](Dokumentation/dokumentation_IM5.md) – schriftliche Dokumentation des Projekts.
 ---
 
-**Stand:** 26. Dezember 2025
+**Stand:** 6. Januar 2026
