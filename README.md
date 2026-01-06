@@ -1,8 +1,9 @@
 ![Raum-Tracker Banner](./Dokumentation/Bilder/banner_raumtracker.jpg)
 # 🏢 Raum-Tracker – Aufenthaltsraum IM5
 
-> Wir machen sichtbar, wie belebt der Aufenthaltsraum IM5 gerade ist – in Echtzeit, anonym und auf einen Blick.
-**https://corner.klaus-klebband.ch/**
+Wir machen sichtbar, wie belebt der Aufenthaltsraum IM5 gerade ist – in Echtzeit, anonym und auf einen Blick. </br>
+
+**Hier gehts zum Entwickler-Dashboard:** **https://corner.klaus-klebband.ch/**
 
 ## Warum wir das bauen
 
